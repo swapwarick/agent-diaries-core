@@ -66,7 +66,8 @@ export class AgentDiary {
     return await this.storage.withLock(`diary_${this.agentId}`, async () => {
       const state = await this.readDiary();
       
-      if (state.seenSignatures.includes(signature)) {
+      const seenSet = new Set(state.seenSignatures);
+      if (seenSet.has(signature)) {
         return false; // Task already exists
       }
 
@@ -94,7 +95,8 @@ export class AgentDiary {
   public async hasProcessedTask(title: string): Promise<boolean> {
     const signature = AgentDiary.normalizeSignature(title);
     const state = await this.readDiary();
-    return state.seenSignatures.includes(signature);
+    const seenSet = new Set(state.seenSignatures);
+    return seenSet.has(signature);
   }
 
   /**
@@ -109,12 +111,16 @@ export class AgentDiary {
 
   /**
    * Filters out items that the agent has already processed.
+   * 
+   * ⚠️ WARNING: filterNewTasks() is a non-atomic snapshot. Always follow it with claimTask()
+   * to atomically claim ownership. Never act on filterNewTasks() results directly without claiming them first.
    */
   public async filterNewTasks<T extends { title: string }>(tasks: T[]): Promise<T[]> {
     const state = await this.readDiary();
+    const seenSet = new Set(state.seenSignatures);
     return tasks.filter(task => {
       const signature = AgentDiary.normalizeSignature(task.title);
-      return !state.seenSignatures.includes(signature);
+      return !seenSet.has(signature);
     });
   }
 

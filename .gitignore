@@ -3,3 +3,4 @@ dist
 .agent-diaries
 TEST_RESULTS.md
 test-report.junit.xml
+.env

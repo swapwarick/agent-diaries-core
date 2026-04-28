@@ -1,6 +1,6 @@
 {
   "name": "@agent-diaries/core",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "The lightweight, framework-agnostic memory layer for edge AI agents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,11 +14,15 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "ai",
-    "agent",
-    "memory",
-    "diary",
-    "local"
+    "ai-agent",
+    "agent-memory",
+    "deduplication",
+    "distributed-lock",
+    "redis",
+    "mongodb",
+    "serverless",
+    "idempotency",
+    "task-queue"
   ],
   "author": "swapwarick_n",
   "repository": {
@@ -31,6 +35,7 @@
   "homepage": "https://github.com/swapwarick/agent-diaries-core#readme",
   "license": "MIT",
   "devDependencies": {
+    "dotenv": "^17.4.2",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^20.0.0",
     "@types/proper-lockfile": "^4.1.4",
@@ -40,9 +45,18 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
-    "dotenv": "^17.4.2",
-    "ioredis": "^5.10.1",
-    "mongodb": "^7.2.0",
     "proper-lockfile": "^4.1.2"
+  },
+  "peerDependencies": {
+    "ioredis": ">=5",
+    "mongodb": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    }
   }
 }

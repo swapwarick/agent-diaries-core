@@ -183,6 +183,7 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
   Retrieves the exact string output/result from a previously completed task so your agent can instantly reuse it.
 - **`diary.filterNewTasks(tasks: T[]): Promise<T[]>`**
   Pass in an array of task objects. Returns only the tasks that the agent has *not* seen yet.
+  *⚠️ WARNING: This method returns a non-atomic snapshot. Always follow up with `claimTask()` on individual items before acting on them in a high-concurrency environment.*
 - **`diary.writeTaskResult(title: string, result: string): Promise<void>`**
   Saves the final result into the agent's memory bank after the agent finishes its work.
 

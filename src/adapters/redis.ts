@@ -1,5 +1,6 @@
 import { StorageAdapter } from '../storage';
 import Redis from 'ioredis';
+import { randomUUID } from 'crypto';
 
 export class RedisStorage<T> implements StorageAdapter<T> {
   private redis: Redis;
@@ -32,7 +33,7 @@ export class RedisStorage<T> implements StorageAdapter<T> {
 
   async withLock<R>(key: string, fn: () => Promise<R>): Promise<R> {
     const lockKey = `${this.getKey(key)}:lock`;
-    const lockValue = Date.now().toString() + Math.random().toString();
+    const lockValue = randomUUID();
     const lockTtlMs = 10000; // 10 seconds max lock
 
     const acquireLock = async (): Promise<boolean> => {
@@ -40,9 +41,13 @@ export class RedisStorage<T> implements StorageAdapter<T> {
       return result === 'OK';
     };
 
-    // Spin-lock until we acquire it
+    let attempt = 0;
     while (!(await acquireLock())) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      const backoff = Math.min(10 * Math.pow(2, attempt), 500);
+      const jitter = Math.random() * 50;
+      await new Promise(resolve => setTimeout(resolve, backoff + jitter));
+      attempt++;
+      if (attempt > 60) throw new Error(`[RedisStorage] Lock timeout on key: ${key}`);
     }
 
     try {
