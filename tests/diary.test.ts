@@ -51,6 +51,15 @@ describe('Agent Diaries Core Logic', () => {
     expect(await agent.getTaskResult('task A')).toBe('Success Output');
   });
 
+  it('should throw an error if writeTaskResult is called without claimTask', async () => {
+    const agent = new AgentDiary({ agentId: 'strict-agent', storage });
+    
+    // We expect this to throw because claimTask was NEVER called
+    await expect(agent.writeTaskResult('Unclaimed Task', 'Some Result'))
+      .rejects
+      .toThrow(/was not claimed/);
+  });
+
   it('should accurately filter new tasks from a batch', async () => {
     const agent = new AgentDiary({ agentId: 'batch-agent', storage });
     await agent.claimTask('Known Task 1');
