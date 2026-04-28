@@ -4,6 +4,7 @@
 
   [![NPM Version](https://img.shields.io/npm/v/@agent-diaries/core?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/@agent-diaries/core)
   [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Cloud Tested](https://img.shields.io/badge/Tested-Cloud%20Ready-success?style=for-the-badge&logo=icloud&logoColor=white)](#-200-agent-real-world-cloud-benchmarks)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 </div>
 
@@ -126,7 +127,7 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
 ```
 
 ### The Results (Zero Race Conditions)
-> *Tested via WAN connection to an Upstash Serverless Redis instance*
+> *Tested via WAN connection to an Upstash Serverless Redis instance and a Free Tier MongoDB Atlas Cluster*
 
 ```text
 =================================
@@ -148,6 +149,27 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
    Expected Written: 200
    Actual Written:   200
    Write Duration:   16267ms
+   🟢 PASSED (Zero data corruption)
+
+=================================
+🌪️ INITIALIZING 200-AGENT SWARM: MongoDB Atlas (Cloud Free Tier)
+=================================
+[Test 1] The Herd Effect: 200 Agents competing for exactly ONE viral task...
+   Expected Locks: 1
+   Actual Locks:   1
+   Resolution Time: 7362ms
+   🟢 PASSED (199 race conditions prevented)
+
+[Test 2] Real World Distribution: 200 Agents processing 10 common data tasks...
+   Expected Locks: 10
+   Actual Locks:   10
+   Resolution Time: 5545ms
+   🟢 PASSED (190 duplicate LLM calls prevented)
+
+[Test 3] Extreme Write Contention: 200 Agents blasting state updates at the exact same time...
+   Expected Written: 200
+   Actual Written:   200
+   Write Duration:   9410ms
    🟢 PASSED (Zero data corruption)
 ```
 
