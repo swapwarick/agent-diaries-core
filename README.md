@@ -69,6 +69,22 @@ async function runAgent() {
 
 runAgent();
 ```
+### Forcefully Re-running a Task
+
+If your agent verifies a task is complete but the user explicitly demands a re-run with fresh data, you can bypass the deduplication entirely:
+
+```typescript
+// 1. Check if it's already done (for logging/informing user)
+if (await diary.hasProcessedTask(currentTask)) {
+  console.log("Task is already done. Forcefully re-running per user request...");
+}
+
+// 2. Perform the work again
+const updatedResult = "Found 0 warnings, ALL critical errors resolved.";
+
+// 3. Skip claimTask() and directly overwrite the old memory
+await diary.writeTaskResult(currentTask, updatedResult);
+```
 
 ## ☁️ Cloud Storage Adapters (Production)
 
@@ -88,20 +104,21 @@ const diary = new AgentDiary({
 });
 ```
 
-### PostgreSQL (Best for Stateful Architectures)
-The `PostgresStorage` adapter natively uses `pg_advisory_lock` to ensure absolute row-level safety during concurrent task evaluation.
+### MongoDB (Best for Document Scaling)
+The `MongoStorage` adapter natively uses atomic `_id` unique insertion constraints to guarantee row-level safety during concurrent task evaluation, with built-in TTL lock expiration.
 
 ```typescript
 import { AgentDiary } from '@agent-diaries/core';
-import { PostgresStorage } from '@agent-diaries/core/dist/adapters/postgres';
-import { Pool } from 'pg';
+import { MongoStorage } from '@agent-diaries/core/dist/adapters/mongo';
+import { MongoClient } from 'mongodb';
 
-const pgStorage = new PostgresStorage({ pool: new Pool({ connectionString: process.env.DATABASE_URL }) });
-await pgStorage.initialize(); // Creates the state table
+const client = new MongoClient(process.env.MONGO_URI);
+await client.connect();
+const collection = client.db('agent_diaries').collection('tasks');
 
 const diary = new AgentDiary({ 
   agentId: 'db-bot',
-  storage: pgStorage 
+  storage: new MongoStorage({ collection }) 
 });
 ```
 
