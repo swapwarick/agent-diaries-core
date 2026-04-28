@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage.reporter=lcov --coverage.reporter=text",
     "build": "tsc",
     "prepublishOnly": "npm run build"
   },

@@ -34,7 +34,7 @@ jobs:
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        slug: swapwarick/agent-diaries-sdk
+        slug: swapwarick/agent-diaries-core
 
     - name: Upload test results to Codecov
       if: ${{ !cancelled() }}
