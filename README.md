@@ -69,9 +69,22 @@ async function runAgent() {
 
 runAgent();
 ```
-### Forcefully Re-running a Task
+### Forcefully Re-running a Task (The Engineering Trick)
 
-If your agent verifies a task is complete but the user explicitly demands a re-run with fresh data, you can bypass the deduplication entirely:
+If you want an agent to strictly avoid duplicate work, use `await diary.claimTask(task)`. It will automatically return `false` if it was done.
+
+But if an agent wants to explicitly overwrite or re-do a task because the user demanded it, you skip `claimTask()` entirely and just write the final result using `await diary.writeTaskResult(task, newResult)`. This seamlessly replaces the old memory with the new one.
+
+```text
+🤖 Agent Alice: Claiming and performing 'Generate Monthly Report'...
+   -> Task done! Saving result.
+--------------------------------------------------
+🤖 Agent Bob: Checking if 'Generate Monthly Report' is done...
+   -> 🛑 Found in Diary! Previous result: "Report for May: $12,000 Revenue."
+   -> 💬 Informs User: "This report was already generated. Do you want me to re-run it with the latest data?"
+   -> 👤 User responds: YES
+   -> Agent Bob forcefully re-running the task... 
+```
 
 ```typescript
 // 1. Check if it's already done (for logging/informing user)
