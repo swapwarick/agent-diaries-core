@@ -2,25 +2,32 @@ import { StorageAdapter } from '../storage';
 import { Collection } from 'mongodb';
 import crypto from 'crypto';
 
+interface MongoStorageOptions {
+  collection: Collection;
+}
+
 export class MongoStorage<T> implements StorageAdapter<T> {
   private collection: Collection;
-  private initialized = false;
+  private static indexedCollections = new Set<string>();
 
-  constructor(config: { collection: Collection }) {
-    this.collection = config.collection;
+  constructor(options: MongoStorageOptions) {
+    this.collection = options.collection;
   }
 
   private async ensureIndex() {
-    if (this.initialized) return;
+    const ns = this.collection.namespace;
+    if (MongoStorage.indexedCollections.has(ns)) return;
+
     try {
       await this.collection.createIndex(
         { lockedAt: 1 },
-        { expireAfterSeconds: 30, partialFilterExpression: { lockedAt: { $exists: true } } }
+        { expireAfterSeconds: 10, partialFilterExpression: { lockedAt: { $exists: true } } }
       );
     } catch (e) {
       console.warn('[MongoStorage] Failed to create TTL index:', e);
     }
-    this.initialized = true;
+
+    MongoStorage.indexedCollections.add(ns);
   }
 
   private hashString(str: string): string {
@@ -64,7 +71,9 @@ export class MongoStorage<T> implements StorageAdapter<T> {
       const jitter = Math.random() * 50;
       await new Promise(resolve => setTimeout(resolve, backoff + jitter));
       attempt++;
-      if (attempt > 60) throw new Error(`[MongoStorage] Lock timeout on key: ${key}`);
+      if (attempt > 150) {
+        throw new Error(`[MongoStorage] Lock timeout on key: ${key}`);
+      }
     }
 
     try {

@@ -39,6 +39,7 @@ describe('Agent Diaries Core Logic', () => {
     expect(await agent.hasProcessedTask('Task A')).toBe(false);
     expect(await agent.getTaskResult('Task A')).toBeUndefined();
     
+    await agent.claimTask('Task A');
     await agent.writeTaskResult('Task A', 'Success Output');
     
     expect(await agent.hasProcessedTask('Task A')).toBe(true);
@@ -52,7 +53,9 @@ describe('Agent Diaries Core Logic', () => {
 
   it('should accurately filter new tasks from a batch', async () => {
     const agent = new AgentDiary({ agentId: 'batch-agent', storage });
+    await agent.claimTask('Known Task 1');
     await agent.writeTaskResult('Known Task 1', 'Success');
+    await agent.claimTask('Known Task 2');
     await agent.writeTaskResult('Known Task 2', 'Success');
 
     const incomingTasks = [
@@ -73,6 +76,7 @@ describe('Agent Diaries Core Logic', () => {
     const agentAlpha = new AgentDiary({ agentId: 'alpha', storage });
     const agentBeta = new AgentDiary({ agentId: 'beta', storage });
 
+    await agentAlpha.claimTask('Shared Task');
     await agentAlpha.writeTaskResult('Shared Task', 'Result Alpha');
 
     // Alpha remembers it
@@ -95,6 +99,7 @@ describe('Agent Diaries Core Logic', () => {
 
     // Write 25 tasks
     for (let i = 0; i < 25; i++) {
+      await agent.claimTask(`Task ${i}`);
       await agent.writeTaskResult(`Task ${i}`, `Result ${i}`);
     }
 
@@ -148,6 +153,7 @@ describe('Agent Diaries Core Logic', () => {
   it('storage edge case: handling corrupted JSON read', async () => {
     // Tests lines 36-37 in storage.ts
     const agent = new AgentDiary({ agentId: 'corrupt-agent', storage });
+    await agent.claimTask('Task 1');
     await agent.writeTaskResult('Task 1', 'Success');
     
     const filePath = path.join(TEST_DIR, 'diary_corrupt-agent.json');

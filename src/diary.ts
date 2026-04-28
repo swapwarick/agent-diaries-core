@@ -140,13 +140,8 @@ export class AgentDiary {
         state.lastRun = Date.now();
         await this.storage.set(`diary_${this.agentId}`, state);
       } else {
-        // If not claimed first, we insert it
-        const record: TaskRecord = { title, signature, result, timestamp: Date.now() };
-        state.history = [record, ...state.history].slice(0, this.maxHistory);
-        state.seenSignatures = state.history.map(r => r.signature);
-        state.runCount += 1;
-        state.lastRun = Date.now();
-        await this.storage.set(`diary_${this.agentId}`, state);
+        // If not claimed first, we throw a loud error
+        throw new Error(`[AgentDiary] Task "${title}" was not claimed. Call claimTask() before writeTaskResult().`);
       }
     });
   }

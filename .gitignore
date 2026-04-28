@@ -4,3 +4,5 @@ dist
 TEST_RESULTS.md
 test-report.junit.xml
 .env
+coverage/
+.env.local
