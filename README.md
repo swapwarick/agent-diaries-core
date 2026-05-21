@@ -29,11 +29,12 @@ Install the core package:
 npm install @agent-diaries/core
 ```
 
-If you plan to use a specific cloud adapter, install its peer dependency:
+If you plan to use a specific storage adapter, install its peer dependency:
 
 ```bash
-npm install ioredis    # For Redis Storage
-npm install mongodb    # For MongoDB Storage
+npm install better-sqlite3 # For SQLite Storage
+npm install ioredis        # For Redis Storage
+npm install mongodb        # For MongoDB Storage
 ```
 
 ## 🚀 Quick Start
@@ -99,11 +100,26 @@ const updatedResult = "Found 0 warnings, ALL critical errors resolved.";
 await diary.writeTaskResult(currentTask, updatedResult);
 ```
 
-## ☁️ Cloud Storage Adapters (Production)
+## 🗄️ Storage Adapters (Cloud & Local Databases)
 
-Local file storage is great for local development, but serverless environments (Vercel, AWS Lambda) have ephemeral filesystems. For production, you **must** use one of our lock-safe cloud adapters.
+Local file storage is great for local development, but serverless environments (Vercel, AWS Lambda) have ephemeral filesystems and require lock-safe cloud adapters, while local tools and desktops benefit from relational SQLite coordination.
 
-### Redis (Best for Serverless)
+### SQLite (Best for Desktop / Local Apps)
+The `SqliteStorage` adapter uses a local SQLite database (`better-sqlite3`) with atomic UNIQUE constraint insertions and transactional TTL locks for highly reliable multi-process coordination.
+
+```typescript
+import { AgentDiary } from '@agent-diaries/core';
+import { SqliteStorage } from '@agent-diaries/core/dist/adapters/sqlite';
+import Database from 'better-sqlite3';
+
+const db = new Database('diary.db');
+const diary = new AgentDiary({ 
+  agentId: 'sqlite-bot',
+  storage: new SqliteStorage({ db }) 
+});
+```
+
+### Redis (Best for Serverless / Swarms)
 The `RedisStorage` adapter uses atomic `SETNX` distributed spin-locks to guarantee race-condition safety across thousands of concurrent Vercel Edge functions.
 
 ```typescript
