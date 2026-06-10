@@ -1,6 +1,6 @@
-import { StorageAdapter } from '../storage';
-import Redis from 'ioredis';
-import { randomUUID } from 'crypto';
+import { StorageAdapter } from "../storage";
+import Redis from "ioredis";
+import { randomUUID } from "crypto";
 
 export class RedisStorage<T> implements StorageAdapter<T> {
   private redis: Redis;
@@ -8,7 +8,7 @@ export class RedisStorage<T> implements StorageAdapter<T> {
 
   constructor(options: { redis: Redis; prefix?: string }) {
     this.redis = options.redis;
-    this.prefix = options.prefix || 'agent-diaries:';
+    this.prefix = options.prefix || "agent-diaries:";
   }
 
   private getKey(key: string): string {
@@ -37,17 +37,24 @@ export class RedisStorage<T> implements StorageAdapter<T> {
     const lockTtlMs = 10000; // 10 seconds max lock
 
     const acquireLock = async (): Promise<boolean> => {
-      const result = await this.redis.set(lockKey, lockValue, 'PX', lockTtlMs, 'NX');
-      return result === 'OK';
+      const result = await this.redis.set(
+        lockKey,
+        lockValue,
+        "PX",
+        lockTtlMs,
+        "NX",
+      );
+      return result === "OK";
     };
 
     let attempt = 0;
     while (!(await acquireLock())) {
       const backoff = Math.min(10 * Math.pow(2, attempt), 500);
       const jitter = Math.random() * 50;
-      await new Promise(resolve => setTimeout(resolve, backoff + jitter));
+      await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
       attempt++;
-      if (attempt > 60) throw new Error(`[RedisStorage] Lock timeout on key: ${key}`);
+      if (attempt > 60)
+        throw new Error(`[RedisStorage] Lock timeout on key: ${key}`);
     }
 
     try {

@@ -2,10 +2,12 @@
   <h1>🧠 Agent Diaries Core</h1>
   <p><strong>The lightweight, lock-safe memory layer for edge AI agents.</strong></p>
 
-  [![NPM Version](https://img.shields.io/npm/v/@agent-diaries/core?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/@agent-diaries/core)
-  [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-  [![Cloud Tested](https://img.shields.io/badge/Tested-Cloud%20Ready-success?style=for-the-badge&logo=icloud&logoColor=white)](#-200-agent-real-world-cloud-benchmarks)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![NPM Version](https://img.shields.io/npm/v/@agent-diaries/core?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/@agent-diaries/core)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Cloud Tested](https://img.shields.io/badge/Tested-Cloud%20Ready-success?style=for-the-badge&logo=icloud&logoColor=white)](#-200-agent-real-world-cloud-benchmarks)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Coverage](https://img.shields.io/badge/coverage-92.68%25-brightgreen)](https://github.com/swapwarick/agent-diaries-core#readme)
+
 </div>
 
 <br />
@@ -42,16 +44,16 @@ npm install mongodb        # For MongoDB Storage
 Initialize an `AgentDiary` and wrap your LLM calls to prevent duplicate executions.
 
 ```typescript
-import { AgentDiary } from '@agent-diaries/core';
+import { AgentDiary } from "@agent-diaries/core";
 
 async function runAgent() {
-  const diary = new AgentDiary({ agentId: 'data-collector' });
-  const currentTask = 'Download Q3 Financial Report';
+  const diary = new AgentDiary({ agentId: "data-collector" });
+  const currentTask = "Download Q3 Financial Report";
 
   // 1. claimTask is ATOMIC. It acquires a distributed lock and registers the task.
   // If two agents try to claim it at the exact same millisecond, only ONE succeeds.
   const isNew = await diary.claimTask(currentTask);
-  
+
   if (!isNew) {
     const pastResult = await diary.getTaskResult(currentTask);
     console.log(`[Agent] ⏩ Skipping task. Result: ${pastResult}`);
@@ -60,7 +62,7 @@ async function runAgent() {
 
   // 2. Execute your expensive LLM logic safely
   console.log(`[Agent] ⚙️ Executing: "${currentTask}"...`);
-  const result = "Found 2 warnings, no critical errors."; 
+  const result = "Found 2 warnings, no critical errors.";
 
   // 3. Update the pending task with the final result
   await diary.writeTaskResult(currentTask, result);
@@ -70,6 +72,7 @@ async function runAgent() {
 
 runAgent();
 ```
+
 ### Forcefully Re-running a Task (The Engineering Trick)
 
 If you want an agent to strictly avoid duplicate work, use `await diary.claimTask(task)`. It will automatically return `false` if it was done.
@@ -84,13 +87,15 @@ But if an agent wants to explicitly overwrite or re-do a task because the user d
    -> 🛑 Found in Diary! Previous result: "Report for May: $12,000 Revenue."
    -> 💬 Informs User: "This report was already generated. Do you want me to re-run it with the latest data?"
    -> 👤 User responds: YES
-   -> Agent Bob forcefully re-running the task... 
+   -> Agent Bob forcefully re-running the task...
 ```
 
 ```typescript
 // 1. Check if it's already done (for logging/informing user)
 if (await diary.hasProcessedTask(currentTask)) {
-  console.log("Task is already done. Forcefully re-running per user request...");
+  console.log(
+    "Task is already done. Forcefully re-running per user request...",
+  );
 }
 
 // 2. Perform the work again
@@ -105,57 +110,97 @@ await diary.writeTaskResult(currentTask, updatedResult);
 Local file storage is great for local development, but serverless environments (Vercel, AWS Lambda) have ephemeral filesystems and require lock-safe cloud adapters, while local tools and desktops benefit from relational SQLite coordination.
 
 ### SQLite (Best for Desktop / Local Apps)
+
 The `SqliteStorage` adapter uses a local SQLite database (`better-sqlite3`) with atomic UNIQUE constraint insertions and transactional TTL locks for highly reliable multi-process coordination.
 
 ```typescript
-import { AgentDiary } from '@agent-diaries/core';
-import { SqliteStorage } from '@agent-diaries/core/dist/adapters/sqlite';
-import Database from 'better-sqlite3';
+import { AgentDiary } from "@agent-diaries/core";
+import { SqliteStorage } from "@agent-diaries/core/dist/adapters/sqlite";
+import Database from "better-sqlite3";
 
-const db = new Database('diary.db');
-const diary = new AgentDiary({ 
-  agentId: 'sqlite-bot',
-  storage: new SqliteStorage({ db }) 
+const db = new Database("diary.db");
+const diary = new AgentDiary({
+  agentId: "sqlite-bot",
+  storage: new SqliteStorage({ db }),
 });
 ```
 
 ### Redis (Best for Serverless / Swarms)
+
 The `RedisStorage` adapter uses atomic `SETNX` distributed spin-locks to guarantee race-condition safety across thousands of concurrent Vercel Edge functions.
 
 ```typescript
-import { AgentDiary } from '@agent-diaries/core';
-import { RedisStorage } from '@agent-diaries/core/dist/adapters/redis';
-import Redis from 'ioredis';
+import { AgentDiary } from "@agent-diaries/core";
+import { RedisStorage } from "@agent-diaries/core/dist/adapters/redis";
+import Redis from "ioredis";
 
-const diary = new AgentDiary({ 
-  agentId: 'cloud-bot',
-  storage: new RedisStorage({ redis: new Redis(process.env.REDIS_URL) }) 
+const diary = new AgentDiary({
+  agentId: "cloud-bot",
+  storage: new RedisStorage({ redis: new Redis(process.env.REDIS_URL) }),
 });
 ```
 
 ### MongoDB (Best for Document Scaling)
+
 The `MongoStorage` adapter natively uses atomic `_id` unique insertion constraints to guarantee row-level safety during concurrent task evaluation, with built-in TTL lock expiration.
 
 ```typescript
-import { AgentDiary } from '@agent-diaries/core';
-import { MongoStorage } from '@agent-diaries/core/dist/adapters/mongo';
-import { MongoClient } from 'mongodb';
+import { AgentDiary } from "@agent-diaries/core";
+import { MongoStorage } from "@agent-diaries/core/dist/adapters/mongo";
+import { MongoClient } from "mongodb";
 
 const client = new MongoClient(process.env.MONGO_URI);
 await client.connect();
-const collection = client.db('agent_diaries').collection('tasks');
+const collection = client.db("agent_diaries").collection("tasks");
 
-const diary = new AgentDiary({ 
-  agentId: 'db-bot',
-  storage: new MongoStorage({ collection }) 
+const diary = new AgentDiary({
+  agentId: "db-bot",
+  storage: new MongoStorage({ collection }),
+});
+```
+
+### Memory (Best for Prototyping / Testing)
+
+The `MemoryStorage` adapter stores tasks and locks fully in memory. It is ideal for fast, isolated unit testing and temporary agent deployments without configuring database instances or writing files.
+
+```typescript
+import { AgentDiary } from "@agent-diaries/core";
+import { MemoryStorage } from "@agent-diaries/core";
+
+const diary = new AgentDiary({
+  agentId: "test-bot",
+  storage: new MemoryStorage(),
+});
+```
+
+## ⏱️ Task Expiration (TTL)
+
+You can specify a Time-to-Live (TTL) for tasks. Once the TTL expires, the task is treated as unprocessed/new, allowing the agent to automatically reclaim and execute it again.
+
+This can be configured globally or overridden on a per-task basis:
+
+```typescript
+// 1. Configure default TTL globally (e.g., 24 hours)
+const diary = new AgentDiary({
+  agentId: "data-collector",
+  defaultTtlMs: 24 * 60 * 60 * 1000,
+});
+
+// 2. Override TTL on claimTask
+const claimed = await diary.claimTask("Update report", { ttlMs: 60 * 1000 }); // 1 minute
+
+// 3. Override/assign TTL on writeTaskResult
+await diary.writeTaskResult("Update report", "Success result", {
+  ttlMs: 10 * 60 * 1000,
 });
 ```
 
 ## 📊 Enterprise Concurrency Benchmarks
 
-Agent Diaries Core is mathematically proven to handle massive concurrent agent swarms without race conditions or database corruption. 
+Agent Diaries Core is mathematically proven to handle massive concurrent agent swarms without race conditions or database corruption.
 
 ### 1. Multi-Process OS-Level Concurrency (Worker Threads)
+
 To verify true operating-system level process isolation, we spawned 50 independent Node.js `worker_threads` to aggressively hit the cloud databases at the exact same millisecond.
 
 ```text
@@ -177,6 +222,7 @@ To verify true operating-system level process isolation, we spawned 50 independe
 To prove its viability for global serverless deployments, we rigorously stress-tested the library against live instances, blasting them with **200 serverless agents** executing distributed lock requests across the internet simultaneously.
 
 #### The Real-Life Architecture
+
 ```typescript
 const NUM_AGENTS = 200;
 let agents = Array.from({ length: NUM_AGENTS }, () => getDiary());
@@ -184,15 +230,16 @@ const viralTask = `Analyze breaking news: OpenAI releases GPT-5 - ${Date.now()}`
 
 // Fire 200 distributed agents at the exact same millisecond
 let results = await Promise.all(
-  agents.map(agent => agent.claimTask(viralTask).catch(() => false))
+  agents.map((agent) => agent.claimTask(viralTask).catch(() => false)),
 );
 
-let successful = results.filter(r => r === true).length;
+let successful = results.filter((r) => r === true).length;
 console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
 ```
 
 ### The Results (Zero Race Conditions)
-> *Tested via WAN connection to an Upstash Serverless Redis instance and a Free Tier MongoDB Atlas Cluster*
+
+> _Tested via WAN connection to an Upstash Serverless Redis instance and a Free Tier MongoDB Atlas Cluster_
 
 ```text
 =================================
@@ -242,15 +289,30 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
 
 ## 📚 API Reference
 
-- **`diary.claimTask(title: string): Promise<boolean>`**
-  Atomically checks if a task has been processed. If not, acquires a lock and claims it as 'pending'. Returns `true` if successfully claimed.
+- **`new AgentDiary(options: AgentDiaryOptions)`**
+  Initializes an agent diary.
+  - `agentId: string`: Unique identifier for the agent.
+  - `storage?: StorageAdapter`: Custom storage adapter (defaults to `LocalFileStorage`).
+  - `maxHistory?: number`: Maximum task records to store in history (defaults to `500`).
+  - `defaultTtlMs?: number`: (Optional) Default TTL in milliseconds for claimed tasks.
+
+- **`diary.claimTask(title: string, options?: { ttlMs?: number }): Promise<boolean>`**
+  Atomically checks if a task has been processed. If not or if it has expired, acquires a lock and claims it. Returns `true` if successfully claimed, `false` otherwise. Supports specifying a custom `ttlMs` override.
 - **`diary.getTaskResult(title: string): Promise<string | undefined>`**
-  Retrieves the exact string output/result from a previously completed task so your agent can instantly reuse it.
+  Retrieves the exact string output/result of a previously completed task if it has not expired.
 - **`diary.filterNewTasks(tasks: T[]): Promise<T[]>`**
-  Pass in an array of task objects. Returns only the tasks that the agent has *not* seen yet.
-  *⚠️ WARNING: This method returns a non-atomic snapshot. Always follow up with `claimTask()` on individual items before acting on them in a high-concurrency environment.*
-- **`diary.writeTaskResult(title: string, result: string): Promise<void>`**
-  Saves the final result into the agent's memory bank after the agent finishes its work.
+  Passes in an array of task objects and returns only the tasks that are either new or have expired.
+  _⚠️ WARNING: This method returns a non-atomic snapshot. Always follow up with `claimTask()` on individual items before acting on them in a high-concurrency environment._
+- **`diary.writeTaskResult(title: string, result?: string, options?: { ttlMs?: number }): Promise<void>`**
+  Saves the final result of a task. Supports updating or setting the task's TTL.
+- **`diary.deleteTask(title: string): Promise<boolean>`**
+  Removes a task's record from history. Returns `true` if deleted, `false` if it didn't exist.
+- **`diary.getTasksCompletedSince(timestamp: number): Promise<TaskRecord[]>`**
+  Retrieves completed, unexpired tasks completed on or after the given Unix timestamp.
+- **`diary.findTasksByKeyword(keyword: string): Promise<TaskRecord[]>`**
+  Performs a case-insensitive search across task titles and results, excluding expired tasks.
+- **`diary.clearHistory(): Promise<void>`**
+  Empties all task history and signatures for this agent.
 
 ## 📄 License
 

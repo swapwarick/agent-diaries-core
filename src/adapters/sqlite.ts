@@ -1,5 +1,5 @@
-import { StorageAdapter } from '../storage';
-import type { Database } from 'better-sqlite3';
+import { StorageAdapter } from "../storage";
+import type { Database } from "better-sqlite3";
 
 export interface SqliteStorageOptions {
   db: Database;
@@ -14,11 +14,11 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
 
   constructor(options: SqliteStorageOptions) {
     if (!options.db) {
-      throw new Error('[SqliteStorage] database instance (db) is required.');
+      throw new Error("[SqliteStorage] database instance (db) is required.");
     }
     this.db = options.db;
-    this.tableName = options.tableName || 'agent_diaries_storage';
-    this.locksTableName = options.locksTableName || 'agent_diaries_locks';
+    this.tableName = options.tableName || "agent_diaries_storage";
+    this.locksTableName = options.locksTableName || "agent_diaries_locks";
 
     // Initialize tables synchronously as better-sqlite3 is fully synchronous
     this.db.exec(`
@@ -51,11 +51,13 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
     try {
       const serialized = JSON.stringify(value);
       this.db
-        .prepare(`
+        .prepare(
+          `
           INSERT INTO ${this.tableName} (key, value)
           VALUES (?, ?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        `)
+        `,
+        )
         .run(key, serialized);
     } catch (e) {
       console.error(`[SqliteStorage] Failed to set key ${key}:`, e);
@@ -71,18 +73,22 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
       const now = Date.now();
       try {
         this.db
-          .prepare(`INSERT INTO ${this.locksTableName} (key, locked_at) VALUES (?, ?)`)
+          .prepare(
+            `INSERT INTO ${this.locksTableName} (key, locked_at) VALUES (?, ?)`,
+          )
           .run(lockKey, now);
         return true;
       } catch (error: any) {
         if (
-          error.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||
-          error.code === 'SQLITE_CONSTRAINT' ||
-          (error.message && error.message.includes('UNIQUE constraint failed'))
+          error.code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
+          error.code === "SQLITE_CONSTRAINT" ||
+          (error.message && error.message.includes("UNIQUE constraint failed"))
         ) {
           // Check if the lock has expired
           const existing = this.db
-            .prepare(`SELECT locked_at FROM ${this.locksTableName} WHERE key = ?`)
+            .prepare(
+              `SELECT locked_at FROM ${this.locksTableName} WHERE key = ?`,
+            )
             .get(lockKey) as { locked_at: number } | undefined;
 
           if (existing && now - existing.locked_at > lockTtlMs) {
@@ -91,10 +97,14 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
               // Wrap cleanup and acquire in a transaction for atomicity
               const runCleanupAndAcquire = this.db.transaction(() => {
                 this.db
-                  .prepare(`DELETE FROM ${this.locksTableName} WHERE key = ? AND locked_at = ?`)
+                  .prepare(
+                    `DELETE FROM ${this.locksTableName} WHERE key = ? AND locked_at = ?`,
+                  )
                   .run(lockKey, existing.locked_at);
                 this.db
-                  .prepare(`INSERT INTO ${this.locksTableName} (key, locked_at) VALUES (?, ?)`)
+                  .prepare(
+                    `INSERT INTO ${this.locksTableName} (key, locked_at) VALUES (?, ?)`,
+                  )
                   .run(lockKey, now);
               });
               runCleanupAndAcquire();
@@ -114,7 +124,7 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
     while (!acquireLock()) {
       const backoff = Math.min(10 * Math.pow(2, attempt), 500);
       const jitter = Math.random() * 50;
-      await new Promise(resolve => setTimeout(resolve, backoff + jitter));
+      await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
       attempt++;
       if (attempt > 60) {
         throw new Error(`[SqliteStorage] Lock timeout on key: ${key}`);
@@ -129,7 +139,10 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
           .prepare(`DELETE FROM ${this.locksTableName} WHERE key = ?`)
           .run(lockKey);
       } catch (e) {
-        console.error(`[SqliteStorage] Failed to release lock on key ${key}:`, e);
+        console.error(
+          `[SqliteStorage] Failed to release lock on key ${key}:`,
+          e,
+        );
       }
     }
   }

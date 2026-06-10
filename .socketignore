@@ -1,0 +1,22 @@
+# .socketignore
+# Suppress known false positives from Socket.dev supply chain security scan.
+# Documented rationale for each suppression is included inline.
+
+# ioredis — Obfuscated code (false positive)
+# The flagged file (built/constants/TLSProfiles.js) contains PEM-encoded TLS/SSL
+# root CA certificates for Redis Cloud. PEM certificates are base64-encoded binary
+# by the X.509 standard and will always appear as high-entropy strings to heuristic
+# scanners. This is not obfuscated malware.
+node_modules/ioredis/built/constants/TLSProfiles.js
+
+# better-sqlite3 — Native code (expected behavior)
+# better-sqlite3 is a native C++ Node.js addon wrapping the SQLite C library.
+# Native code is a documented, required characteristic of this adapter.
+# Users must opt-in to it by installing better-sqlite3 as a peer dependency.
+node_modules/better-sqlite3
+
+# prebuild-install — Deprecated / Unmaintained (upstream issue)
+# prebuild-install is a sub-dependency of better-sqlite3 used only during
+# npm install to download precompiled binaries. It is not a runtime dependency
+# and cannot be updated without better-sqlite3 migrating to a newer tool.
+node_modules/prebuild-install
