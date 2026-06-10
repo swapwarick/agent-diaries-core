@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.5] - 2026-06-10
+## [1.1.6] - 2026-06-10
+
+### Security
+
+- Validate `tableName` and `locksTableName` in `SqliteStorage` constructor to prevent SQL injection vulnerabilities.
 
 ### Added
 
