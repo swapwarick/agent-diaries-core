@@ -18,6 +18,19 @@ describe("SqliteStorage Adapter & AgentDiary Integration", () => {
     db.close();
   });
 
+  it("should throw an error if tableName or locksTableName contains invalid characters", () => {
+    expect(
+      () => new SqliteStorage({ db, tableName: "invalid table name;" }),
+    ).toThrow(/Invalid tableName/);
+    expect(
+      () =>
+        new SqliteStorage({ db, locksTableName: "invalid-locks-table-name" }),
+    ).toThrow(/Invalid locksTableName/);
+    expect(
+      () => new SqliteStorage({ db, tableName: "safe_table_name" }),
+    ).not.toThrow();
+  });
+
   it("should support basic get and set operations", async () => {
     const key = "test-key";
     const val = { success: true, count: 42 };

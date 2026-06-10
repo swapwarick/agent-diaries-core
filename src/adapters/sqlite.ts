@@ -20,6 +20,18 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
     this.tableName = options.tableName || "agent_diaries_storage";
     this.locksTableName = options.locksTableName || "agent_diaries_locks";
 
+    const nameRegex = /^[a-zA-Z0-9_]+$/;
+    if (!nameRegex.test(this.tableName)) {
+      throw new Error(
+        `[SqliteStorage] Invalid tableName: "${this.tableName}". Only alphanumeric characters and underscores are allowed.`,
+      );
+    }
+    if (!nameRegex.test(this.locksTableName)) {
+      throw new Error(
+        `[SqliteStorage] Invalid locksTableName: "${this.locksTableName}". Only alphanumeric characters and underscores are allowed.`,
+      );
+    }
+
     // Initialize tables synchronously as better-sqlite3 is fully synchronous
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS ${this.tableName} (
