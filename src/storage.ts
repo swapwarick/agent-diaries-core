@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as lockfile from "proper-lockfile";
+import { randomUUID } from "crypto";
 
 export interface StorageAdapter<T> {
   get(key: string): Promise<T | null>;
@@ -72,15 +73,20 @@ export class LocalFileStorage<T> implements StorageAdapter<T> {
   }
 }
 
+/**
+ * In-memory storage adapter. Ideal for fast, isolated unit testing and
+ * temporary agent deployments without configuring database instances.
+ *
+ * Each MemoryStorage instance maintains its own independent store and lock map,
+ * ensuring complete isolation between different instances (and different agents).
+ */
 export class MemoryStorage<T> implements StorageAdapter<T> {
-  private static store = new Map<string, string>();
-  private static locks = new Map<
-    string,
-    { value: string; expiresAt: number }
-  >();
+  // Instance-level fields — NOT static — to prevent cross-instance state pollution
+  private store = new Map<string, string>();
+  private locks = new Map<string, { value: string; expiresAt: number }>();
 
   async get(key: string): Promise<T | null> {
-    const data = MemoryStorage.store.get(key);
+    const data = this.store.get(key);
     if (!data) return null;
     try {
       return JSON.parse(data) as T;
@@ -91,21 +97,22 @@ export class MemoryStorage<T> implements StorageAdapter<T> {
   }
 
   async set(key: string, value: T): Promise<void> {
-    MemoryStorage.store.set(key, JSON.stringify(value));
+    this.store.set(key, JSON.stringify(value));
   }
 
   async withLock<R>(key: string, fn: () => Promise<R>): Promise<R> {
     const lockKey = `${key}:lock`;
-    const lockValue = Math.random().toString();
+    // Use crypto.randomUUID() for a robust, unguessable lock token
+    const lockValue = randomUUID();
     const lockTtlMs = 10000;
 
     const acquireLock = (): boolean => {
       const now = Date.now();
-      const existing = MemoryStorage.locks.get(lockKey);
+      const existing = this.locks.get(lockKey);
       if (existing && existing.expiresAt > now) {
         return false;
       }
-      MemoryStorage.locks.set(lockKey, {
+      this.locks.set(lockKey, {
         value: lockValue,
         expiresAt: now + lockTtlMs,
       });
@@ -126,9 +133,9 @@ export class MemoryStorage<T> implements StorageAdapter<T> {
     try {
       return await fn();
     } finally {
-      const existing = MemoryStorage.locks.get(lockKey);
+      const existing = this.locks.get(lockKey);
       if (existing && existing.value === lockValue) {
-        MemoryStorage.locks.delete(lockKey);
+        this.locks.delete(lockKey);
       }
     }
   }

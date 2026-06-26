@@ -5,10 +5,22 @@ import { randomUUID } from "crypto";
 export class RedisStorage<T> implements StorageAdapter<T> {
   private redis: Redis;
   private prefix: string;
+  /** Optional TTL (ms) applied to every diary blob written via set(). Prevents unbounded key growth. */
+  private globalTtlMs?: number;
 
-  constructor(options: { redis: Redis; prefix?: string }) {
+  constructor(options: {
+    redis: Redis;
+    prefix?: string;
+    /**
+     * Optional Time-to-Live in milliseconds applied to the diary state blob stored
+     * in Redis (distinct from per-task TTL). Prevents orphaned keys from accumulating
+     * indefinitely in Redis. Example: 30 * 24 * 60 * 60 * 1000 for 30 days.
+     */
+    globalTtlMs?: number;
+  }) {
     this.redis = options.redis;
     this.prefix = options.prefix || "agent-diaries:";
+    this.globalTtlMs = options.globalTtlMs;
   }
 
   private getKey(key: string): string {
@@ -28,7 +40,13 @@ export class RedisStorage<T> implements StorageAdapter<T> {
 
   async set(key: string, value: T): Promise<void> {
     const data = JSON.stringify(value);
-    await this.redis.set(this.getKey(key), data);
+    const redisKey = this.getKey(key);
+    if (this.globalTtlMs !== undefined) {
+      // Set with PX (millisecond) expiry to prevent unbounded key accumulation
+      await this.redis.set(redisKey, data, "PX", this.globalTtlMs);
+    } else {
+      await this.redis.set(redisKey, data);
+    }
   }
 
   async withLock<R>(key: string, fn: () => Promise<R>): Promise<R> {

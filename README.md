@@ -19,9 +19,17 @@
 ## ✨ Features
 
 - **🚫 Deduplication & Loop Prevention:** Automatically filter out tasks your agent has already seen.
-- **🔒 Fully Lock-Safe:** Uses atomic spin-locks and advisory locks to completely eliminate race conditions, even with 50+ concurrent agents processing the exact same task simultaneously.
-- **☁️ Cloud-Native Adapters:** Comes with official adapters for **Redis** and **MongoDB** for Vercel/AWS Lambda deployments, plus a local file adapter for development.
-- **⚡ Ultra-Lightweight:** Negligible bundle size, zero heavy dependencies.
+- **🔒 Fully Lock-Safe:** Uses atomic spin-locks to completely eliminate race conditions, even with 50+ concurrent agents processing the exact same task simultaneously.
+- **☁️ Cloud-Native Adapters:** Official adapters for **Redis**, **MongoDB**, **PostgreSQL**, **SQLite**, and in-memory storage.
+- **📋 Task Lifecycle Tracking:** Tasks now carry a `status` field — `"pending"`, `"done"`, or `"failed"` — for richer observability and retry logic.
+- **⚡ Batch Operations:** Claim hundreds of tasks in a single atomic lock with `batchClaimTasks()`.
+- **📊 Built-in Diagnostics:** `getStats()` returns live agent health metrics for monitoring dashboards.
+- **🔁 Export / Import:** Snapshot and restore agent state across environments with `exportHistory()` / `importHistory()`.
+- **🪝 Expiry Hooks:** React to task expiration events via the `onTaskExpired` callback.
+- **🔑 Custom Hashing:** Override the task signature function with your own `hashFn` for domain-specific deduplication.
+- **⚡ Ultra-Lightweight:** Negligible bundle size, zero heavy runtime dependencies.
+
+---
 
 ## 📦 Installation
 
@@ -37,7 +45,10 @@ If you plan to use a specific storage adapter, install its peer dependency:
 npm install better-sqlite3 # For SQLite Storage
 npm install ioredis        # For Redis Storage
 npm install mongodb        # For MongoDB Storage
+npm install pg             # For PostgreSQL / Supabase / Neon Storage
 ```
+
+---
 
 ## 🚀 Quick Start
 
@@ -105,6 +116,8 @@ const updatedResult = "Found 0 warnings, ALL critical errors resolved.";
 await diary.writeTaskResult(currentTask, updatedResult);
 ```
 
+---
+
 ## 🗄️ Storage Adapters (Cloud & Local Databases)
 
 Local file storage is great for local development, but serverless environments (Vercel, AWS Lambda) have ephemeral filesystems and require lock-safe cloud adapters, while local tools and desktops benefit from relational SQLite coordination.
@@ -129,6 +142,8 @@ const diary = new AgentDiary({
 
 The `RedisStorage` adapter uses atomic `SETNX` distributed spin-locks to guarantee race-condition safety across thousands of concurrent Vercel Edge functions.
 
+The optional `globalTtlMs` option sets an expiry on the diary state blob in Redis, preventing orphaned keys from accumulating indefinitely.
+
 ```typescript
 import { AgentDiary } from "@agent-diaries/core";
 import { RedisStorage } from "@agent-diaries/core/dist/adapters/redis";
@@ -136,7 +151,10 @@ import Redis from "ioredis";
 
 const diary = new AgentDiary({
   agentId: "cloud-bot",
-  storage: new RedisStorage({ redis: new Redis(process.env.REDIS_URL) }),
+  storage: new RedisStorage({
+    redis: new Redis(process.env.REDIS_URL),
+    globalTtlMs: 30 * 24 * 60 * 60 * 1000, // Optional: expire diary blobs after 30 days
+  }),
 });
 ```
 
@@ -159,19 +177,39 @@ const diary = new AgentDiary({
 });
 ```
 
+### PostgreSQL / Supabase / Neon (Best for Managed SQL)
+
+The `PostgresStorage` adapter uses a lock table with atomic `INSERT` + conflict detection, an indexed `locked_at` column for TTL-based lock stealing, and `lock_id`-safe release. It works with any managed Postgres provider — Supabase, Neon, Railway, AWS RDS, etc. Tables and indexes are created automatically on first use.
+
+```typescript
+import { AgentDiary } from "@agent-diaries/core";
+import { PostgresStorage } from "@agent-diaries/core/dist/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const diary = new AgentDiary({
+  agentId: "pg-bot",
+  storage: new PostgresStorage({ pool }),
+});
+```
+
 ### Memory (Best for Prototyping / Testing)
 
 The `MemoryStorage` adapter stores tasks and locks fully in memory. It is ideal for fast, isolated unit testing and temporary agent deployments without configuring database instances or writing files.
 
+Each `MemoryStorage` instance maintains its own completely independent store — no shared state between instances.
+
 ```typescript
-import { AgentDiary } from "@agent-diaries/core";
-import { MemoryStorage } from "@agent-diaries/core";
+import { AgentDiary, MemoryStorage } from "@agent-diaries/core";
 
 const diary = new AgentDiary({
   agentId: "test-bot",
   storage: new MemoryStorage(),
 });
 ```
+
+---
 
 ## ⏱️ Task Expiration (TTL)
 
@@ -194,6 +232,145 @@ await diary.writeTaskResult("Update report", "Success result", {
   ttlMs: 10 * 60 * 1000,
 });
 ```
+
+---
+
+## 📋 Task Lifecycle & Status Tracking _(New in v1.2.0)_
+
+Every `TaskRecord` now includes a `status` field that tracks the task through its full lifecycle:
+
+| Status | Set By | Meaning |
+|--------|--------|---------|
+| `"pending"` | `claimTask()` / `batchClaimTasks()` | Task is claimed but the result hasn't been written yet |
+| `"done"` | `writeTaskResult()` | Task completed successfully |
+| `"failed"` | `failTask()` | Task failed; optional `failReason` is available |
+
+```typescript
+// Claim a task (status → "pending")
+await diary.claimTask("Analyze report");
+
+try {
+  const result = await runExpensiveLLMCall();
+  // Mark as done with result (status → "done")
+  await diary.writeTaskResult("Analyze report", result);
+} catch (err) {
+  // Explicitly mark as failed with reason (status → "failed")
+  await diary.failTask("Analyze report", err.message);
+}
+
+// Read the status back
+const state = await diary.readDiary();
+console.log(state.history[0].status);     // "failed"
+console.log(state.history[0].failReason); // "network timeout"
+```
+
+---
+
+## ⚡ Batch Claiming _(New in v1.2.0)_
+
+Instead of calling `claimTask()` in a loop (N lock acquisitions), `batchClaimTasks()` claims all new tasks atomically inside a single lock. This drastically reduces round-trips to Redis/MongoDB/SQLite for batch workloads.
+
+```typescript
+const incomingTasks = [
+  "Scrape AAPL stock data",
+  "Scrape GOOGL stock data",
+  "Scrape TSLA stock data",
+  "Generate summary report",
+];
+
+// One lock acquisition instead of four
+const claimed = await diary.batchClaimTasks(incomingTasks);
+console.log(claimed);
+// → ["Scrape AAPL stock data", "Scrape TSLA stock data", "Generate summary report"]
+// (GOOGL was already done — silently skipped)
+
+// Process only the claimed tasks
+for (const title of claimed) {
+  const result = await scrapeData(title);
+  await diary.writeTaskResult(title, result);
+}
+```
+
+---
+
+## 📊 Agent Health Diagnostics _(New in v1.2.0)_
+
+`getStats()` returns a live diagnostic summary of the agent's diary state. Expired tasks are automatically excluded from all counts.
+
+```typescript
+const stats = await diary.getStats();
+console.log(stats);
+// {
+//   agentId:      "data-collector",
+//   runCount:     142,
+//   historyCount: 38,    // active (non-expired) records
+//   pendingCount: 3,
+//   doneCount:    31,
+//   failedCount:  4,
+//   lastRunAt:    1750000000000,
+//   oldestTaskAt: 1749990000000
+// }
+```
+
+---
+
+## 📤 Export & Import History _(New in v1.2.0)_
+
+Snapshot and restore agent state for backups, migrations, or cross-agent context sharing.
+
+```typescript
+// Export the full diary state
+const snapshot = await diaryA.exportHistory();
+
+// Restore into another agent (replaces existing state)
+await diaryB.importHistory(snapshot);
+
+// Or merge — adds only tasks not already in diaryB, without overwriting existing ones
+await diaryB.importHistory(snapshot, { merge: true });
+```
+
+---
+
+## 🧹 Pruning Expired Tasks _(New in v1.2.0)_
+
+`pruneExpiredTasks()` atomically removes all expired records from history and returns them. Pair it with the `onTaskExpired` hook for automated re-queuing or audit logging.
+
+```typescript
+const diary = new AgentDiary({
+  agentId: "data-collector",
+  defaultTtlMs: 60 * 60 * 1000, // 1 hour
+  onTaskExpired: async (record) => {
+    // Called for every expired record during claimTask(), batchClaimTasks(), or pruneExpiredTasks()
+    console.log(`Task expired: ${record.title} (status: ${record.status})`);
+    await requeueTask(record.title); // re-add to your work queue
+  },
+});
+
+// Run on a schedule (e.g., every hour) to keep history clean
+const pruned = await diary.pruneExpiredTasks();
+console.log(`Pruned ${pruned.length} expired tasks.`);
+```
+
+---
+
+## 🔑 Custom Task Hashing _(New in v1.2.0)_
+
+By default, tasks are deduplicated by lowercasing and trimming the title string. You can replace this with any function via `hashFn` — useful for structured task IDs, semantic deduplication, or domain-specific normalization.
+
+```typescript
+// Example: use the task's unique ID field as the deduplication key
+const diary = new AgentDiary({
+  agentId: "structured-bot",
+  hashFn: (title) => title.split(":")[0].trim(), // use prefix as key
+});
+
+// "job:abc123" and "job:xyz789" share the prefix "job" → treated as duplicates
+await diary.claimTask("job:abc123");
+const isDup = await diary.claimTask("job:xyz789");
+console.log(isDup); // false — same hash "job"
+```
+
+---
 
 ## 📊 Enterprise Concurrency Benchmarks
 
@@ -287,32 +464,123 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
 
 **💡 Engineering Insight:** While SQL databases perform well on local network environments, relational connection poolers (like pgBouncer or Supavisor) completely buckle under the massive concurrent TCP bursts generated by serverless AI swarms. **Redis or MongoDB (via atomic upserts)** are strictly required for reliable lock management in high-concurrency serverless edge environments.
 
+---
+
 ## 📚 API Reference
 
-- **`new AgentDiary(options: AgentDiaryOptions)`**
-  Initializes an agent diary.
-  - `agentId: string`: Unique identifier for the agent.
-  - `storage?: StorageAdapter`: Custom storage adapter (defaults to `LocalFileStorage`).
-  - `maxHistory?: number`: Maximum task records to store in history (defaults to `500`).
-  - `defaultTtlMs?: number`: (Optional) Default TTL in milliseconds for claimed tasks.
+### Constructor
+
+**`new AgentDiary(options: AgentDiaryOptions)`**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `agentId` | `string` | _(required)_ | Unique identifier for this agent |
+| `storage` | `StorageAdapter` | `LocalFileStorage` | Storage backend to use |
+| `maxHistory` | `number` | `500` | Max task records to retain in history |
+| `defaultTtlMs` | `number` | `undefined` | Default TTL (ms) for all claimed tasks |
+| `hashFn` | `(title: string) => string` | `normalizeSignature` | Custom task signature function _(v1.2.0)_ |
+| `onTaskExpired` | `(record: TaskRecord) => void \| Promise<void>` | `undefined` | Callback fired on task expiry _(v1.2.0)_ |
+
+---
+
+### Core Methods
 
 - **`diary.claimTask(title: string, options?: { ttlMs?: number }): Promise<boolean>`**
-  Atomically checks if a task has been processed. If not or if it has expired, acquires a lock and claims it. Returns `true` if successfully claimed, `false` otherwise. Supports specifying a custom `ttlMs` override.
-- **`diary.getTaskResult(title: string): Promise<string | undefined>`**
-  Retrieves the exact string output/result of a previously completed task if it has not expired.
-- **`diary.filterNewTasks(tasks: T[]): Promise<T[]>`**
-  Passes in an array of task objects and returns only the tasks that are either new or have expired.
-  _⚠️ WARNING: This method returns a non-atomic snapshot. Always follow up with `claimTask()` on individual items before acting on them in a high-concurrency environment._
+  Atomically checks if a task has been processed. If not (or if expired), acquires a lock and claims it with `status: "pending"`. Returns `true` if successfully claimed, `false` otherwise.
+
+- **`diary.batchClaimTasks(titles: string[], options?: { ttlMs?: number }): Promise<string[]>`** _(v1.2.0)_
+  Atomically claims multiple tasks in a **single lock acquisition**. Returns the array of titles that were successfully claimed. Tasks already processed (and not expired) are silently skipped.
+
 - **`diary.writeTaskResult(title: string, result?: string, options?: { ttlMs?: number }): Promise<void>`**
-  Saves the final result of a task. Supports updating or setting the task's TTL.
-- **`diary.deleteTask(title: string): Promise<boolean>`**
-  Removes a task's record from history. Returns `true` if deleted, `false` if it didn't exist.
+  Saves the final result of a task and sets `status: "done"`. Throws if `claimTask()` was never called first.
+
+- **`diary.failTask(title: string, reason?: string): Promise<void>`** _(v1.2.0)_
+  Marks a previously claimed task as `status: "failed"` with an optional `failReason` string. Throws if `claimTask()` was never called first.
+
+- **`diary.hasProcessedTask(title: string): Promise<boolean>`**
+  Returns `true` if the task exists in history and has not expired.
+  _⚠️ Non-atomic snapshot. Follow with `claimTask()` in concurrent environments._
+
+- **`diary.getTaskResult(title: string): Promise<string | undefined>`**
+  Returns the stored result string, or `undefined` if the task doesn't exist or has expired.
+  _⚠️ Non-atomic snapshot. Follow with `claimTask()` in concurrent environments._
+
+- **`diary.filterNewTasks<T extends { title: string }>(tasks: T[]): Promise<T[]>`**
+  Returns the subset of tasks that are new or expired.
+  _⚠️ Non-atomic snapshot. Always follow with `claimTask()` before acting on results._
+
+---
+
+### Query Methods
+
 - **`diary.getTasksCompletedSince(timestamp: number): Promise<TaskRecord[]>`**
-  Retrieves completed, unexpired tasks completed on or after the given Unix timestamp.
+  Returns completed, unexpired tasks with `timestamp >= timestamp`.
+
 - **`diary.findTasksByKeyword(keyword: string): Promise<TaskRecord[]>`**
-  Performs a case-insensitive search across task titles and results, excluding expired tasks.
+  Case-insensitive substring search across task titles and results, excluding expired tasks.
+
+- **`diary.getStats(): Promise<AgentStats>`** _(v1.2.0)_
+  Returns a diagnostic summary: `agentId`, `runCount`, `historyCount`, `pendingCount`, `doneCount`, `failedCount`, `lastRunAt`, `oldestTaskAt`.
+
+---
+
+### Management Methods
+
+- **`diary.deleteTask(title: string): Promise<boolean>`**
+  Removes a task record from history. Returns `true` if deleted, `false` if not found.
+
+- **`diary.pruneExpiredTasks(): Promise<TaskRecord[]>`** _(v1.2.0)_
+  Atomically removes all expired task records from history. Fires `onTaskExpired` for each. Returns the list of evicted records.
+
+- **`diary.exportHistory(): Promise<AgentState>`** _(v1.2.0)_
+  Exports the full agent state as a plain serializable object.
+
+- **`diary.importHistory(snapshot: AgentState, options?: { merge?: boolean }): Promise<void>`** _(v1.2.0)_
+  Imports a snapshot. Pass `merge: true` to combine with existing state instead of replacing it.
+
 - **`diary.clearHistory(): Promise<void>`**
   Empties all task history and signatures for this agent.
+
+- **`diary.readDiary(): Promise<AgentState>`**
+  Reads the raw state object without locking. Useful for debugging.
+  _⚠️ Non-atomic — do not rely on this in high-concurrency flows._
+
+- **`AgentDiary.normalizeSignature(title: string): string`** _(static)_
+  The default signature function: lowercases, trims, and collapses whitespace.
+
+---
+
+## 🗓️ Version History
+
+### v1.2.0 — 2026-06-26
+
+**New Features**
+- `status` field on `TaskRecord` — `"pending"` | `"done"` | `"failed"` + optional `failReason`
+- `diary.failTask(title, reason?)` — atomically mark a claimed task as failed
+- `diary.batchClaimTasks(titles[])` — claim N tasks in one lock (huge performance win for swarms)
+- `diary.getStats()` — live agent health diagnostics (pending/done/failed counts)
+- `diary.exportHistory()` / `diary.importHistory()` — state backup, restore, and cross-agent sync
+- `diary.pruneExpiredTasks()` — manual cleanup with `onTaskExpired` callback support
+- `onTaskExpired` callback option — fires on any task expiry across `claimTask`, `batchClaimTasks`, and `pruneExpiredTasks`
+- `hashFn` option — plug in a custom task signature function
+- **PostgreSQL / Supabase / Neon adapter** (`PostgresStorage`) — lock table with atomic INSERT, lock-id-safe release, lazy table init
+- `RedisStorage.globalTtlMs` option — prevent unbounded Redis key growth
+
+**Bug Fixes**
+- `MemoryStorage` fields made instance-level (was `static` — caused cross-instance state pollution)
+- `writeTaskResult` now captures a single `Date.now()` for both `timestamp` and `lastRun`
+- Added ⚠️ non-atomic warnings to `hasProcessedTask()` and `getTaskResult()` JSDoc
+- Added SQLite index on `locked_at` for faster TTL expiry scans
+
+### v1.1.6 — 2026-06-10
+
+- `MemoryStorage` adapter for prototyping and unit testing
+- Task TTL (`defaultTtlMs`, per-task `ttlMs` on `claimTask` / `writeTaskResult`)
+- `diary.deleteTask()`, `diary.getTasksCompletedSince()`, `diary.findTasksByKeyword()`, `diary.clearHistory()`
+- SQL injection protection on `SqliteStorage` table names
+- Multi-process worker fixture fix (`claim-worker.cjs` + `dist/package.json`)
+
+---
 
 ## 📄 License
 

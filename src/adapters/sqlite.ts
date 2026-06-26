@@ -42,6 +42,8 @@ export class SqliteStorage<T> implements StorageAdapter<T> {
         key TEXT PRIMARY KEY,
         locked_at INTEGER
       );
+      CREATE INDEX IF NOT EXISTS idx_${this.locksTableName}_locked_at
+        ON ${this.locksTableName} (locked_at);
     `);
   }
 
