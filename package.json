@@ -1,6 +1,6 @@
 {
   "name": "@agent-diaries/core",
-  "version": "1.1.6",
+  "version": "1.2.0",
   "description": "The lightweight, framework-agnostic memory layer for edge AI agents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -40,6 +40,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
     "@types/proper-lockfile": "^4.1.4",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
@@ -50,6 +51,7 @@
     "eslint-plugin-prettier": "^5.5.6",
     "ioredis": "^5.10.1",
     "mongodb": "^7.2.0",
+    "pg": "^8.22.0",
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
@@ -61,7 +63,8 @@
   "peerDependencies": {
     "better-sqlite3": ">=9 || >=10 || >=11",
     "ioredis": ">=5",
-    "mongodb": ">=6"
+    "mongodb": ">=6",
+    "pg": ">=8"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
@@ -71,6 +74,9 @@
       "optional": true
     },
     "mongodb": {
+      "optional": true
+    },
+    "pg": {
       "optional": true
     }
   }
