@@ -14,9 +14,20 @@ node_modules/ioredis/built/constants/TLSProfiles.js
 # Native code is a documented, required characteristic of this adapter.
 # Users must opt-in to it by installing better-sqlite3 as a peer dependency.
 node_modules/better-sqlite3
+# better-sqlite3 — Obfuscated code (false positive)
+# Socket flags `lib/methods/pragma.js` because it builds PRAGMA statements from
+# caller-controlled strings. In this package, that code is upstream library
+# behavior rather than app-specific dynamic SQL.
+node_modules/better-sqlite3/lib/methods/pragma.js
+
+# @mongodb-js/saslprep — Unstable ownership (false positive)
+# This package is a transitive dependency of the MongoDB driver used for SASL /
+# SCRAM password normalization. The alert is about upstream package metadata.
+node_modules/@mongodb-js/saslprep
 
 # prebuild-install â€” Deprecated / Unmaintained (upstream issue)
 # prebuild-install is a sub-dependency of better-sqlite3 used only during
 # npm install to download precompiled binaries. It is not a runtime dependency
 # and cannot be updated without better-sqlite3 migrating to a newer tool.
 node_modules/prebuild-install
+
