@@ -29,6 +29,13 @@ export interface AgentStats {
   oldestTaskAt?: number; // Unix ms of oldest active task
 }
 
+
+export interface TaskListOptions {
+  status?: TaskRecord["status"] | TaskRecord["status"][];
+  includeExpired?: boolean;
+  limit?: number;
+  offset?: number;
+}
 export interface AgentDiaryOptions {
   agentId: string;
   storage?: StorageAdapter<AgentState>;
@@ -97,6 +104,49 @@ export class AgentDiary {
    */
   private isExpired(record: TaskRecord, now: number): boolean {
     return record.ttlMs !== undefined && now - record.timestamp > record.ttlMs;
+  }
+
+  /**
+   * Normalizes the task status for current and legacy records.
+   * Older snapshots may not include a status field, so we infer "done"
+   * when a result is present and "pending" otherwise.
+   */
+  private getRecordStatus(record: TaskRecord): TaskRecord["status"] {
+    if (record.status) {
+      return record.status;
+    }
+    return record.result !== undefined ? "done" : "pending";
+  }
+
+  private buildTaskView(
+    records: TaskRecord[],
+    options?: TaskListOptions,
+  ): TaskRecord[] {
+    const statuses = Array.isArray(options?.status)
+      ? options?.status
+      : options?.status
+        ? [options.status]
+        : undefined;
+
+    const limit =
+      options?.limit !== undefined ? Math.max(0, options.limit) : undefined;
+    const offset =
+      options?.offset !== undefined ? Math.max(0, options.offset) : 0;
+
+    let filtered = records;
+    if (!options?.includeExpired) {
+      const now = Date.now();
+      filtered = filtered.filter((record) => !this.isExpired(record, now));
+    }
+
+    if (statuses) {
+      filtered = filtered.filter((record) =>
+        statuses.includes(this.getRecordStatus(record)),
+      );
+    }
+
+    const sliced = filtered.slice(offset);
+    return limit === undefined ? sliced : sliced.slice(0, limit);
   }
 
   /**
@@ -417,13 +467,13 @@ export class AgentDiary {
     );
 
     const pendingCount = activeHistory.filter(
-      (r) => (r.status ?? "pending") === "pending",
+      (r) => this.getRecordStatus(r) === "pending",
     ).length;
     const doneCount = activeHistory.filter(
-      (r) => (r.status ?? "done") === "done",
+      (r) => this.getRecordStatus(r) === "done",
     ).length;
     const failedCount = activeHistory.filter(
-      (r) => r.status === "failed",
+      (r) => this.getRecordStatus(r) === "failed",
     ).length;
 
     const timestamps = activeHistory.map((r) => r.timestamp);
@@ -441,12 +491,54 @@ export class AgentDiary {
     };
   }
 
+
+  /**
+   * Returns diary records in newest-first order with optional filtering.
+   * By default, expired tasks are excluded from the returned list.
+   */
+  public async listTasks(options?: TaskListOptions): Promise<TaskRecord[]> {
+    const state = await this.readDiary();
+    return this.buildTaskView(state.history, options);
+  }
+
+  /**
+   * Returns diary records that match a specific task status.
+   * This is a convenience wrapper around listTasks().
+   */
+  public async getTasksByStatus(
+    status: TaskRecord["status"],
+    options?: Omit<TaskListOptions, "status">,
+  ): Promise<TaskRecord[]> {
+    return await this.listTasks({ ...options, status });
+  }
+
+  /** Returns all active tasks that are still pending. */
+  public async getPendingTasks(
+    options?: Omit<TaskListOptions, "status">,
+  ): Promise<TaskRecord[]> {
+    return await this.getTasksByStatus("pending", options);
+  }
+
+  /** Returns all active tasks that have been marked as done. */
+  public async getDoneTasks(
+    options?: Omit<TaskListOptions, "status">,
+  ): Promise<TaskRecord[]> {
+    return await this.getTasksByStatus("done", options);
+  }
+
+  /** Returns all active tasks that have been marked as failed. */
+  public async getFailedTasks(
+    options?: Omit<TaskListOptions, "status">,
+  ): Promise<TaskRecord[]> {
+    return await this.getTasksByStatus("failed", options);
+  }
+
   /**
    * Scans history for expired task records, removes them atomically,
    * and returns the list of evicted records.
    *
    * Also triggers the `onTaskExpired` callback (if configured) for every
-   * evicted record — making this a useful scheduled cleanup operation.
+   * evicted record - making this a useful scheduled cleanup operation.
    *
    * @returns Array of TaskRecord entries that were pruned
    */

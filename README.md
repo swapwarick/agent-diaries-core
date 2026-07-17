@@ -22,6 +22,7 @@
 - **🔒 Fully Lock-Safe:** Uses atomic spin-locks to completely eliminate race conditions, even with 50+ concurrent agents processing the exact same task simultaneously.
 - **☁️ Cloud-Native Adapters:** Official adapters for **Redis**, **MongoDB**, **PostgreSQL**, **SQLite**, and in-memory storage.
 - **📋 Task Lifecycle Tracking:** Tasks now carry a `status` field — `"pending"`, `"done"`, or `"failed"` — for richer observability and retry logic.
+- **Task Query Helpers:** Use `listTasks()` and status-specific helpers to inspect pending, done, and failed tasks.
 - **⚡ Batch Operations:** Claim hundreds of tasks in a single atomic lock with `batchClaimTasks()`.
 - **📊 Built-in Diagnostics:** `getStats()` returns live agent health metrics for monitoring dashboards.
 - **🔁 Export / Import:** Snapshot and restore agent state across environments with `exportHistory()` / `importHistory()`.
@@ -517,6 +518,21 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
   Returns completed, unexpired tasks with `timestamp >= timestamp`.
 
 - **`diary.findTasksByKeyword(keyword: string): Promise<TaskRecord[]>`**
+
+- **`diary.listTasks(options?: TaskListOptions): Promise<TaskRecord[]>`**
+  Returns diary records in newest-first order with optional filters for `status`, `limit`, `offset`, and `includeExpired`.
+
+- **`diary.getTasksByStatus(status: TaskRecord["status"], options?: Omit<TaskListOptions, "status">): Promise<TaskRecord[]>`**
+  Convenience wrapper for fetching records that match a single status.
+
+- **`diary.getPendingTasks(options?: Omit<TaskListOptions, "status">): Promise<TaskRecord[]>`**
+  Returns all active pending tasks.
+
+- **`diary.getDoneTasks(options?: Omit<TaskListOptions, "status">): Promise<TaskRecord[]>`**
+  Returns all active completed tasks.
+
+- **`diary.getFailedTasks(options?: Omit<TaskListOptions, "status">): Promise<TaskRecord[]>`**
+  Returns all active failed tasks.
   Case-insensitive substring search across task titles and results, excluding expired tasks.
 
 - **`diary.getStats(): Promise<AgentStats>`** _(v1.2.0)_
@@ -550,9 +566,17 @@ console.log(`   Actual Locks: ${successful}`); // Always exactly 1.
 
 ---
 
+## Unreleased
+
+### Added
+- Task listing helpers for querying diary history by status, with optional pagination and expired-record filtering.
+
+### Improved
+- Legacy snapshots without an explicit `status` now infer `done` when a stored `result` is present.
+
 ## 🗓️ Version History
 
-### v1.2.0 — 2026-06-26
+### v1.3.0 — 2026-07-17
 
 **New Features**
 - `status` field on `TaskRecord` — `"pending"` | `"done"` | `"failed"` + optional `failReason`

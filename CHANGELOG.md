@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-07-17
+
+### Added
+- `diary.listTasks(options?)` plus status-specific helpers for pending, done, and failed records.
+
+### Improved
+- Legacy records without `status` now infer `done` when a `result` is present.
+
+## [Unreleased]
+
 ## [1.2.0] - 2026-06-26
 
 ### Fixed
