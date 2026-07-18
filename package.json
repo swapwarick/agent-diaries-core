@@ -1,25 +1,77 @@
 {
   "name": "@agent-diaries/core",
-  "version": "1.3.0",
-  "description": "The lightweight, framework-agnostic memory layer for edge AI agents.",
+  "version": "2.0.0",
+  "description": "The lightweight, framework-agnostic memory layer and workflow orchestration platform for edge AI agents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./diary": {
+      "types": "./dist/diary.d.ts",
+      "import": "./dist/diary.js",
+      "require": "./dist/diary.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js",
+      "require": "./dist/storage.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js",
+      "require": "./dist/memory/index.js"
+    },
+    "./redis": {
+      "types": "./dist/redis/index.d.ts",
+      "import": "./dist/redis/index.js",
+      "require": "./dist/redis/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres/index.d.ts",
+      "import": "./dist/postgres/index.js",
+      "require": "./dist/postgres/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js",
+      "require": "./dist/shared/index.js"
+    },
+    "./adapters/*": {
+      "types": "./dist/adapters/*.d.ts",
+      "import": "./dist/adapters/*.js",
+      "require": "./dist/adapters/*.js"
+    }
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage.reporter=lcov --coverage.reporter=text",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
-    "build": "tsc",
+    "docs:generate": "typedoc",
+    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
     "ai-agent",
     "agent-memory",
+    "workflow-orchestration",
     "deduplication",
     "distributed-lock",
+    "state-machine",
     "redis",
     "mongodb",
     "serverless",
@@ -36,7 +88,6 @@
   },
   "homepage": "https://github.com/swapwarick/agent-diaries-core#readme",
   "license": "MIT",
-  "type": "module",
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.1",
@@ -45,6 +96,7 @@
     "@typescript-eslint/eslint-plugin": "^8.61.0",
     "@typescript-eslint/parser": "^8.61.0",
     "@vitest/coverage-v8": "^4.1.7",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
@@ -53,6 +105,7 @@
     "mongodb": "^7.2.0",
     "pg": "^8.22.0",
     "prettier": "^3.8.3",
+    "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
     "vitest": "^4.1.7"

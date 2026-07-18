@@ -34,12 +34,12 @@ async function simulateMultiAgentScrape() {
 
     console.log(`[System] Assigning "${task.title}" to ${agentName}`);
 
-    // Check Memory
-    const alreadyProcessed = await agent.hasProcessedTask(task.title);
+    // Claim Task
+    const claimed = await agent.claimTask(task.title);
 
-    if (alreadyProcessed) {
+    if (!claimed) {
       console.log(
-        `[${agentName}] ⏩ Skipping "${task.title}". I already researched this!\n`,
+        `[${agentName}] ⏩ Skipping "${task.title}". Already claimed or researched!\n`,
       );
       continue;
     }

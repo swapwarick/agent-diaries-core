@@ -1,71 +1,68 @@
-import { StorageAdapter, LocalFileStorage } from "./storage";
+import {
+  StorageAdapter,
+  LocalFileStorage,
+  MemoryCacheProvider,
+  MemoryLockProvider,
+  MemoryPersistenceProvider,
+} from "./memory";
+import {
+  StorageManager,
+  DiaryRepository,
+  defaultEventBus,
+} from "./core";
+import {
+  TaskRecord,
+  AgentState,
+  AgentStats,
+  TaskListOptions,
+  AgentDiaryOptions,
+} from "./shared";
 
-export interface TaskRecord {
-  title: string;
-  signature: string; // A unique hash or normalized string to identify the task
-  result?: string;
-  status: "pending" | "done" | "failed"; // Tracks task lifecycle stage
-  failReason?: string; // Optional failure message set by failTask()
-  timestamp: number;
-  ttlMs?: number; // Optional TTL specific to this task run
-}
+export type {
+  TaskRecord,
+  AgentState,
+  AgentStats,
+  TaskListOptions,
+  AgentDiaryOptions,
+};
 
-export interface AgentState {
-  lastRun: number;
-  seenSignatures: string[];
-  runCount: number;
-  history: TaskRecord[];
-}
-
-/** Diagnostic summary of an agent's diary state. */
-export interface AgentStats {
-  agentId: string;
-  runCount: number;
-  historyCount: number; // Active (non-expired) records
-  pendingCount: number;
-  doneCount: number;
-  failedCount: number;
-  lastRunAt: number;
-  oldestTaskAt?: number; // Unix ms of oldest active task
-}
-
-
-export interface TaskListOptions {
-  status?: TaskRecord["status"] | TaskRecord["status"][];
-  includeExpired?: boolean;
-  limit?: number;
-  offset?: number;
-}
-export interface AgentDiaryOptions {
-  agentId: string;
-  storage?: StorageAdapter<AgentState>;
-  maxHistory?: number;
-  defaultTtlMs?: number; // Default TTL in milliseconds for claimed tasks
-  /**
-   * Custom function to compute a task's signature from its title.
-   * Defaults to AgentDiary.normalizeSignature (lowercase + trim).
-   * Useful for structured task IDs or custom deduplication logic.
-   */
-  hashFn?: (title: string) => string;
-  /**
-   * Optional callback invoked whenever a task record is found to be expired
-   * during claimTask() or pruneExpiredTasks(). Useful for audit trails,
-   * re-queuing, or observability pipelines.
-   */
-  onTaskExpired?: (record: TaskRecord) => void | Promise<void>;
-}
-
+/**
+ * High-level persistent memory diary for autonomous AI agents.
+ * 
+ * Provides atomic task deduplication, status tracking, expiration TTLs,
+ * and lock-safe concurrent execution across multi-agent swarms.
+ *
+ * @example
+ * ```typescript
+ * const diary = new AgentDiary({ agentId: "data-collector" });
+ * const claimed = await diary.claimTask("Download Q3 Financial Report");
+ * if (claimed) {
+ *   await diary.writeTaskResult("Download Q3 Financial Report", "Success");
+ * }
+ * ```
+ */
 export class AgentDiary {
   private agentId: string;
   private storage: StorageAdapter<AgentState>;
+  private storageManager: StorageManager;
+  private diaryRepo: DiaryRepository;
   private maxHistory: number;
   private defaultTtlMs?: number;
   private hashFn?: (title: string) => string;
   private onTaskExpired?: (record: TaskRecord) => void | Promise<void>;
 
+  /**
+   * Initializes a new `AgentDiary` instance.
+   *
+   * @param options Configuration options including agent ID, storage adapter, and TTL settings.
+   */
   constructor(options: AgentDiaryOptions) {
     this.agentId = options.agentId;
     this.storage = options.storage || new LocalFileStorage<AgentState>();
+    this.storageManager = new StorageManager({
+      legacyAdapter: this.storage,
+    });
+    this.diaryRepo = new DiaryRepository(this.storageManager, defaultEventBus);
     this.maxHistory = options.maxHistory || 500;
     this.defaultTtlMs = options.defaultTtlMs;
     this.hashFn = options.hashFn;
@@ -82,35 +79,25 @@ export class AgentDiary {
   }
 
   /**
-   * Generates a normalized signature for a task title.
-   * Lowercases, trims, and collapses whitespace.
+   * Normalizes a task title into a standardized signature string.
+   *
+   * @param title The raw task title string.
+   * @returns Lowercased, whitespace-trimmed signature.
    */
   public static normalizeSignature(title: string): string {
     return (title || "").toLowerCase().trim().replace(/\s+/g, " ");
   }
 
-  /**
-   * Computes the task signature using the custom hashFn if provided,
-   * or falls back to the default normalizeSignature method.
-   */
   private computeSignature(title: string): string {
     return this.hashFn
       ? this.hashFn(title)
       : AgentDiary.normalizeSignature(title);
   }
 
-  /**
-   * Checks whether a task record has expired based on its TTL.
-   */
   private isExpired(record: TaskRecord, now: number): boolean {
     return record.ttlMs !== undefined && now - record.timestamp > record.ttlMs;
   }
 
-  /**
-   * Normalizes the task status for current and legacy records.
-   * Older snapshots may not include a status field, so we infer "done"
-   * when a result is present and "pending" otherwise.
-   */
   private getRecordStatus(record: TaskRecord): TaskRecord["status"] {
     if (record.status) {
       return record.status;
@@ -150,23 +137,25 @@ export class AgentDiary {
   }
 
   /**
-   * Reads the current diary state (without locking).
+   * Reads the current raw agent diary state.
    *
-   * ⚠️ NOTE: This is a non-atomic snapshot. Do not make decisions based on
-   * this read in high-concurrency environments without acquiring a lock first.
+   * @returns Promise resolving to the AgentState structure.
    */
   public async readDiary(): Promise<AgentState> {
-    const state = await this.storage.get(`diary_${this.agentId}`);
+    const state = await this.diaryRepo.loadDiary(this.agentId);
     return state ?? this.emptyState();
   }
 
+  private async writeDiary(state: AgentState): Promise<void> {
+    await this.diaryRepo.saveDiary(this.agentId, state);
+  }
+
   /**
-   * Atomically attempts to claim a task.
-   * Returns true if successfully claimed (first time seen or expired), false if
-   * already claimed/processed and not yet expired.
+   * Atomically claims a task for execution under a distributed lock.
    *
-   * When a previously expired task is reclaimed, the optional `onTaskExpired`
-   * callback is invoked with the old record before it is removed.
+   * @param title The task title to claim.
+   * @param options Per-task TTL options.
+   * @returns Promise resolving to `true` if claimed successfully, `false` if already claimed/processed.
    */
   public async claimTask(
     title: string,
@@ -180,21 +169,19 @@ export class AgentDiary {
       const now = Date.now();
 
       const recordIndex = state.history.findIndex(
-        (r) => r.signature === signature,
+        (r: TaskRecord) => r.signature === signature,
       );
       if (recordIndex !== -1) {
         const record = state.history[recordIndex];
         if (!this.isExpired(record, now)) {
-          return false; // Task already exists and is not expired
+          return false;
         }
-        // Fire the expiry hook before evicting the old record
         if (this.onTaskExpired) {
           await this.onTaskExpired(record);
         }
         state.history.splice(recordIndex, 1);
       }
 
-      // Claim it immediately to prevent race conditions
       const record: TaskRecord = {
         title,
         signature,
@@ -206,22 +193,21 @@ export class AgentDiary {
       }
 
       state.history = [record, ...state.history].slice(0, this.maxHistory);
-      state.seenSignatures = state.history.map((r) => r.signature);
+      state.seenSignatures = state.history.map((r: TaskRecord) => r.signature);
       state.runCount += 1;
       state.lastRun = now;
 
-      await this.storage.set(`diary_${this.agentId}`, state);
+      await this.writeDiary(state);
       return true;
     });
   }
 
   /**
-   * Atomically claims multiple tasks in a single lock acquisition.
-   * Much more efficient than calling claimTask() N times for batch workloads —
-   * reduces round-trips to Redis/MongoDB/SQLite by a factor of N.
+   * Atomically claims a batch of task titles in a single lock session.
    *
-   * Returns the subset of titles that were successfully claimed (new or expired).
-   * Tasks already processed and not expired are skipped silently.
+   * @param titles Array of task titles to claim.
+   * @param options Per-batch TTL options.
+   * @returns Promise resolving to an array of successfully claimed titles.
    */
   public async batchClaimTasks(
     titles: string[],
@@ -237,15 +223,14 @@ export class AgentDiary {
       for (const title of titles) {
         const signature = this.computeSignature(title);
         const recordIndex = state.history.findIndex(
-          (r) => r.signature === signature,
+          (r: TaskRecord) => r.signature === signature,
         );
 
         if (recordIndex !== -1) {
           const record = state.history[recordIndex];
           if (!this.isExpired(record, now)) {
-            continue; // Already claimed and not expired — skip
+            continue;
           }
-          // Fire the expiry hook before evicting the old record
           if (this.onTaskExpired) {
             await this.onTaskExpired(record);
           }
@@ -269,9 +254,9 @@ export class AgentDiary {
 
       if (claimed.length > 0) {
         state.history = state.history.slice(0, this.maxHistory);
-        state.seenSignatures = state.history.map((r) => r.signature);
+        state.seenSignatures = state.history.map((r: TaskRecord) => r.signature);
         state.lastRun = now;
-        await this.storage.set(`diary_${this.agentId}`, state);
+        await this.writeDiary(state);
       }
 
       return claimed;
@@ -279,38 +264,38 @@ export class AgentDiary {
   }
 
   /**
-   * Checks if a task has already been processed by the agent.
+   * Checks whether a task has already been processed and is active.
    *
-   * ⚠️ WARNING: This is a non-atomic read. In high-concurrency environments,
-   * always follow this with claimTask() before acting on the result.
+   * @param title The task title to query.
+   * @returns Promise resolving to `true` if processed, `false` otherwise.
    */
   public async hasProcessedTask(title: string): Promise<boolean> {
     const signature = this.computeSignature(title);
     const state = await this.readDiary();
-    const record = state.history.find((r) => r.signature === signature);
+    const record = state.history.find((r: TaskRecord) => r.signature === signature);
     if (!record) return false;
     return !this.isExpired(record, Date.now());
   }
 
   /**
-   * Retrieves the stored result of a previously processed task, if available.
+   * Retrieves the saved string result of a previously completed task.
    *
-   * ⚠️ WARNING: This is a non-atomic read. In high-concurrency environments,
-   * always follow this with claimTask() before acting on the result.
+   * @param title The task title to query.
+   * @returns Promise resolving to the result string, or `undefined` if missing/expired.
    */
   public async getTaskResult(title: string): Promise<string | undefined> {
     const signature = this.computeSignature(title);
     const state = await this.readDiary();
-    const record = state.history.find((r) => r.signature === signature);
+    const record = state.history.find((r: TaskRecord) => r.signature === signature);
     if (!record) return undefined;
     return this.isExpired(record, Date.now()) ? undefined : record.result;
   }
 
   /**
-   * Filters out items that the agent has already processed.
+   * Filters an array of objects containing task titles, returning only new/unseen tasks.
    *
-   * ⚠️ WARNING: filterNewTasks() is a non-atomic snapshot. Always follow it with claimTask()
-   * to atomically claim ownership. Never act on filterNewTasks() results directly without claiming them first.
+   * @param tasks Array of task objects containing a `title` property.
+   * @returns Promise resolving to array of unseen task objects.
    */
   public async filterNewTasks<T extends { title: string }>(
     tasks: T[],
@@ -319,15 +304,18 @@ export class AgentDiary {
     const now = Date.now();
     return tasks.filter((task) => {
       const signature = this.computeSignature(task.title);
-      const record = state.history.find((r) => r.signature === signature);
+      const record = state.history.find((r: TaskRecord) => r.signature === signature);
       if (!record) return true;
       return this.isExpired(record, now);
     });
   }
 
   /**
-   * Updates a claimed task with its final result and marks it as "done".
-   * Supports updating or setting the task's TTL.
+   * Writes the final execution result for a previously claimed task.
+   *
+   * @param title The task title.
+   * @param result The result string output from LLM/execution logic.
+   * @param options Per-task TTL options.
    */
   public async writeTaskResult(
     title: string,
@@ -341,10 +329,9 @@ export class AgentDiary {
       const state = await this.readDiary();
 
       const recordIndex = state.history.findIndex(
-        (r) => r.signature === signature,
+        (r: TaskRecord) => r.signature === signature,
       );
       if (recordIndex !== -1) {
-        // Capture timestamp once to ensure consistency between record and lastRun
         const now = Date.now();
         state.history[recordIndex].result = result;
         state.history[recordIndex].status = "done";
@@ -358,9 +345,8 @@ export class AgentDiary {
           state.history[recordIndex].ttlMs = this.defaultTtlMs;
         }
         state.lastRun = now;
-        await this.storage.set(`diary_${this.agentId}`, state);
+        await this.writeDiary(state);
       } else {
-        // If not claimed first, we throw a loud error
         throw new Error(
           `[AgentDiary] Task "${title}" was not claimed. Call claimTask() before writeTaskResult().`,
         );
@@ -369,12 +355,10 @@ export class AgentDiary {
   }
 
   /**
-   * Marks a previously claimed task as "failed" with an optional reason string.
-   * Failed tasks remain in history and can be queried or re-claimed.
+   * Marks a claimed task as failed with an optional error reason.
    *
-   * @param title - The task title (must have been previously claimed)
-   * @param reason - Optional human-readable failure message
-   * @throws If the task was never claimed
+   * @param title The task title.
+   * @param reason The error or failure message.
    */
   public async failTask(title: string, reason?: string): Promise<void> {
     const signature = this.computeSignature(title);
@@ -382,7 +366,7 @@ export class AgentDiary {
     await this.storage.withLock(`diary_${this.agentId}`, async () => {
       const state = await this.readDiary();
       const recordIndex = state.history.findIndex(
-        (r) => r.signature === signature,
+        (r: TaskRecord) => r.signature === signature,
       );
 
       if (recordIndex === -1) {
@@ -397,13 +381,15 @@ export class AgentDiary {
       state.history[recordIndex].timestamp = now;
       state.lastRun = now;
 
-      await this.storage.set(`diary_${this.agentId}`, state);
+      await this.writeDiary(state);
     });
   }
 
   /**
-   * Deletes a task from the diary so that it can be processed/run again.
-   * Returns true if the task was found and deleted, false otherwise.
+   * Deletes a task entry from the diary history.
+   *
+   * @param title The task title to delete.
+   * @returns Promise resolving to `true` if deleted, `false` if not found.
    */
   public async deleteTask(title: string): Promise<boolean> {
     const signature = this.computeSignature(title);
@@ -411,40 +397,46 @@ export class AgentDiary {
     return await this.storage.withLock(`diary_${this.agentId}`, async () => {
       const state = await this.readDiary();
       const initialLength = state.history.length;
-      state.history = state.history.filter((r) => r.signature !== signature);
+      state.history = state.history.filter((r: TaskRecord) => r.signature !== signature);
 
       if (state.history.length === initialLength) {
         return false;
       }
 
-      state.seenSignatures = state.history.map((r) => r.signature);
-      await this.storage.set(`diary_${this.agentId}`, state);
+      state.seenSignatures = state.history.map((r: TaskRecord) => r.signature);
+      await this.writeDiary(state);
       return true;
     });
   }
 
   /**
-   * Retrieves task records completed after a specific timestamp, excluding expired tasks.
+   * Retrieves all completed tasks recorded after a given timestamp.
+   *
+   * @param timestamp The starting millisecond timestamp.
+   * @returns Array of matching TaskRecord items.
    */
   public async getTasksCompletedSince(
     timestamp: number,
   ): Promise<TaskRecord[]> {
     const state = await this.readDiary();
     const now = Date.now();
-    return state.history.filter((r) => {
+    return state.history.filter((r: TaskRecord) => {
       if (r.result === undefined || r.timestamp < timestamp) return false;
       return !this.isExpired(r, now);
     });
   }
 
   /**
-   * Performs a case-insensitive substring search for task records in history, excluding expired tasks.
+   * Searches active task history by keyword matching title or result content.
+   *
+   * @param keyword Search keyword.
+   * @returns Array of matching TaskRecord items.
    */
   public async findTasksByKeyword(keyword: string): Promise<TaskRecord[]> {
     const state = await this.readDiary();
     const now = Date.now();
     const cleanKeyword = keyword.toLowerCase().trim();
-    return state.history.filter((r) => {
+    return state.history.filter((r: TaskRecord) => {
       if (this.isExpired(r, now)) return false;
       const titleMatch = r.title.toLowerCase().includes(cleanKeyword);
       const resultMatch =
@@ -454,29 +446,29 @@ export class AgentDiary {
   }
 
   /**
-   * Returns a diagnostic summary of this agent's current diary state.
-   * Counts are based on active (non-expired) records only.
-   * Useful for monitoring dashboards and health checks.
+   * Returns live health and performance statistics for this agent instance.
+   *
+   * @returns AgentStats summary structure.
    */
   public async getStats(): Promise<AgentStats> {
     const state = await this.readDiary();
     const now = Date.now();
 
     const activeHistory = state.history.filter(
-      (r) => !this.isExpired(r, now),
+      (r: TaskRecord) => !this.isExpired(r, now),
     );
 
     const pendingCount = activeHistory.filter(
-      (r) => this.getRecordStatus(r) === "pending",
+      (r: TaskRecord) => this.getRecordStatus(r) === "pending",
     ).length;
     const doneCount = activeHistory.filter(
-      (r) => this.getRecordStatus(r) === "done",
+      (r: TaskRecord) => this.getRecordStatus(r) === "done",
     ).length;
     const failedCount = activeHistory.filter(
-      (r) => this.getRecordStatus(r) === "failed",
+      (r: TaskRecord) => this.getRecordStatus(r) === "failed",
     ).length;
 
-    const timestamps = activeHistory.map((r) => r.timestamp);
+    const timestamps = activeHistory.map((r: TaskRecord) => r.timestamp);
 
     return {
       agentId: this.agentId,
@@ -491,10 +483,11 @@ export class AgentDiary {
     };
   }
 
-
   /**
-   * Returns diary records in newest-first order with optional filtering.
-   * By default, expired tasks are excluded from the returned list.
+   * Lists tasks with optional status filtering, pagination limits, and offset options.
+   *
+   * @param options TaskListOptions for filtering and pagination.
+   * @returns Array of matching TaskRecord items.
    */
   public async listTasks(options?: TaskListOptions): Promise<TaskRecord[]> {
     const state = await this.readDiary();
@@ -502,8 +495,11 @@ export class AgentDiary {
   }
 
   /**
-   * Returns diary records that match a specific task status.
-   * This is a convenience wrapper around listTasks().
+   * Lists tasks filtered by a specific status.
+   *
+   * @param status Task status to filter ("pending" | "done" | "failed").
+   * @param options Pagination options.
+   * @returns Array of matching TaskRecord items.
    */
   public async getTasksByStatus(
     status: TaskRecord["status"],
@@ -512,21 +508,27 @@ export class AgentDiary {
     return await this.listTasks({ ...options, status });
   }
 
-  /** Returns all active tasks that are still pending. */
+  /**
+   * Convenience helper to list pending tasks.
+   */
   public async getPendingTasks(
     options?: Omit<TaskListOptions, "status">,
   ): Promise<TaskRecord[]> {
     return await this.getTasksByStatus("pending", options);
   }
 
-  /** Returns all active tasks that have been marked as done. */
+  /**
+   * Convenience helper to list completed tasks.
+   */
   public async getDoneTasks(
     options?: Omit<TaskListOptions, "status">,
   ): Promise<TaskRecord[]> {
     return await this.getTasksByStatus("done", options);
   }
 
-  /** Returns all active tasks that have been marked as failed. */
+  /**
+   * Convenience helper to list failed tasks.
+   */
   public async getFailedTasks(
     options?: Omit<TaskListOptions, "status">,
   ): Promise<TaskRecord[]> {
@@ -534,13 +536,9 @@ export class AgentDiary {
   }
 
   /**
-   * Scans history for expired task records, removes them atomically,
-   * and returns the list of evicted records.
+   * Scans and prunes expired tasks from history.
    *
-   * Also triggers the `onTaskExpired` callback (if configured) for every
-   * evicted record - making this a useful scheduled cleanup operation.
-   *
-   * @returns Array of TaskRecord entries that were pruned
+   * @returns Array of pruned expired TaskRecord items.
    */
   public async pruneExpiredTasks(): Promise<TaskRecord[]> {
     return await this.storage.withLock(`diary_${this.agentId}`, async () => {
@@ -548,7 +546,7 @@ export class AgentDiary {
       const now = Date.now();
       const expired: TaskRecord[] = [];
 
-      state.history = state.history.filter((r) => {
+      state.history = state.history.filter((r: TaskRecord) => {
         if (this.isExpired(r, now)) {
           expired.push(r);
           return false;
@@ -557,10 +555,9 @@ export class AgentDiary {
       });
 
       if (expired.length > 0) {
-        state.seenSignatures = state.history.map((r) => r.signature);
-        await this.storage.set(`diary_${this.agentId}`, state);
+        state.seenSignatures = state.history.map((r: TaskRecord) => r.signature);
+        await this.writeDiary(state);
 
-        // Fire expiry callbacks after state is safely written
         if (this.onTaskExpired) {
           for (const record of expired) {
             await this.onTaskExpired(record);
@@ -573,24 +570,17 @@ export class AgentDiary {
   }
 
   /**
-   * Exports the full agent diary state as a plain serializable object.
-   * Useful for backups, cross-environment migrations, or cross-agent sync.
-   *
-   * @example
-   * const snapshot = await diary.exportHistory();
-   * await otherDiary.importHistory(snapshot);
+   * Exports a complete snapshot of the current agent state.
    */
   public async exportHistory(): Promise<AgentState> {
     return await this.readDiary();
   }
 
   /**
-   * Imports a previously exported diary snapshot into this agent.
+   * Imports an agent state snapshot into the diary.
    *
-   * @param snapshot - A state object previously returned by exportHistory()
-   * @param options.merge - If true, merges the snapshot with existing history
-   *   (tasks from snapshot not in current state are prepended). If false (default),
-   *   replaces the current state entirely.
+   * @param snapshot The state structure to restore.
+   * @param options Merge behavior options.
    */
   public async importHistory(
     snapshot: AgentState,
@@ -600,10 +590,10 @@ export class AgentDiary {
       if (options?.merge) {
         const current = await this.readDiary();
         const existingSignatures = new Set(
-          current.history.map((r) => r.signature),
+          current.history.map((r: TaskRecord) => r.signature),
         );
         const newRecords = snapshot.history.filter(
-          (r) => !existingSignatures.has(r.signature),
+          (r: TaskRecord) => !existingSignatures.has(r.signature),
         );
         const merged: AgentState = {
           lastRun: Math.max(current.lastRun, snapshot.lastRun),
@@ -614,10 +604,10 @@ export class AgentDiary {
           ),
           seenSignatures: [],
         };
-        merged.seenSignatures = merged.history.map((r) => r.signature);
-        await this.storage.set(`diary_${this.agentId}`, merged);
+        merged.seenSignatures = merged.history.map((r: TaskRecord) => r.signature);
+        await this.writeDiary(merged);
       } else {
-        await this.storage.set(`diary_${this.agentId}`, {
+        await this.writeDiary({
           ...snapshot,
           history: snapshot.history.slice(0, this.maxHistory),
         });
@@ -626,11 +616,11 @@ export class AgentDiary {
   }
 
   /**
-   * Clears the entire agent history and seen signatures.
+   * Clears all diary state and history.
    */
   public async clearHistory(): Promise<void> {
     await this.storage.withLock(`diary_${this.agentId}`, async () => {
-      await this.storage.set(`diary_${this.agentId}`, this.emptyState());
+      await this.writeDiary(this.emptyState());
     });
   }
 }

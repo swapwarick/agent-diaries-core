@@ -16,12 +16,12 @@ async function simulateAgent() {
   for (const task of tasks) {
     console.log(`[Agent] Received task: "${task.title}"`);
 
-    // 1. Check if the task has already been processed by querying the diary
-    const alreadyProcessed = await diary.hasProcessedTask(task.title);
+    // 1. Atomically claim the task
+    const claimed = await diary.claimTask(task.title);
 
-    if (alreadyProcessed) {
+    if (!claimed) {
       console.log(
-        `[Agent] ⏩ Skipping "${task.title}" - I remember doing this already!\n`,
+        `[Agent] ⏩ Skipping "${task.title}" - Already claimed or processed!\n`,
       );
       continue;
     }

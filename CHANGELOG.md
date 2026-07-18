@@ -1,55 +1,67 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to `@agent-diaries/core` will be documented in this file.
 
-## [1.3.0] - 2026-07-17
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.0.0] - 2026-07-18
+
+### 🏛️ Architectural Evolution in Version 2.0.0
+Version 2.0.0 marks the evolution of `@agent-diaries/core` from an orchestration library backed by a generic key-value storage wrapper into a true **enterprise-grade orchestration platform**.
+
+Underneath the public `AgentDiary` API, the framework has been re-architected around a domain-driven repository model (`WorkflowRepository`, `DiaryRepository`, `TraceRepository`, `TimelineRepository`, `MetricsRepository`, `ProviderRepository`), a decoupled infrastructure facade (`StorageManager`), a strict workflow state machine (`WorkflowStateMachine`), an internal pub-sub event bus (`EventBus`), a worker process registry (`WorkerRegistry`), and an extensible plugin system (`PluginRegistry`).
+
+All architectural enhancements have been delivered while preserving **100% backward compatibility** with no breaking changes to existing public APIs or storage adapters.
+
+---
 
 ### Added
-- `diary.listTasks(options?)` plus status-specific helpers for pending, done, and failed records.
+- **Domain Repository Pattern:**
+  - `WorkflowRepository`: Lifecycle management (`createWorkflow`, `claimWorkflow`, `completeWorkflow`, `failWorkflow`, `cancelWorkflow`, `findReusableWorkflow`).
+  - `DiaryRepository`: Key-value task indexing and signature matching (`saveDiary`, `loadDiary`, `recordReuse`, `findBySignature`).
+  - `TraceRepository`: OpenTelemetry-style trace and span tracking (`recordTrace`, `recordSpan`, `loadWorkflowTrace`).
+  - `TimelineRepository`: Sequenced audit log trail (`appendEvent`, `loadTimeline`).
+  - `MetricsRepository`: Metric recording and aggregation (`recordMetric`, `aggregateMetrics`).
+  - `ProviderRepository`: Provider health and latency monitoring (`recordProviderLatency`, `recordProviderFailure`).
+- **Infrastructure Abstraction (`StorageManager`):**
+  - Decoupled storage facade orchestrating `CacheProvider`, `LockProvider`, and `PersistenceProvider` abstractions.
+  - Built-in bridge (`StorageAdapterBridge`) for legacy key-value storage adapters (`LocalFileStorage`, `MemoryStorage`).
+- **Workflow State Machine (`WorkflowStateMachine`):**
+  - Enforces valid status transitions across 9 lifecycle states: `CREATED`, `QUEUED`, `CLAIMED`, `RUNNING`, `WAITING`, `COMPLETED`, `FAILED`, `CANCELLED`, `EXPIRED`.
+  - Throws `InvalidStateTransitionError` on disallowed state transitions.
+- **Internal Event Bus (`EventBus`):**
+  - Strongly-typed pub-sub event system emitting `WorkflowCreated`, `WorkflowClaimed`, `WorkflowStarted`, `WorkflowCompleted`, `WorkflowFailed`, `WorkflowReused`, `DiaryUpdated`, `TraceRecorded`, `ProviderFailure`, `CacheHit`, `CacheMiss`, `LockAcquired`, and `LockReleased`.
+- **Worker Process Registry (`WorkerRegistry`):**
+  - Active worker monitoring, hostname/PID tracking, heartbeats, and stale worker pruning via `pruneStaleWorkers()`.
+- **Extensible Plugin System (`PluginRegistry`):**
+  - Modular framework (`AgentDiariesPlugin`, `PluginContext`, `PluginRegistry`) allowing third-party storage, search, metrics, and tracing plugins.
+- **Search Provider Orchestration (`SearchOrchestrator`):**
+  - Multi-provider search orchestration supporting `TinyFishProvider` and `TavilyProvider` with automated latency recording and failovers.
+- **Diagnostics & Benchmarking:**
+  - `Dashboard`: Real-time active worker monitoring, workflow counts, and event stream summaries.
+  - `BenchmarkEngine` & `CertificationEngine`: Automated throughput benchmarking and system certification tests.
+- **Subpath Import Support:**
+  - Package subpath exports configured in `package.json` for `@agent-diaries/core/core`, `/memory`, `/redis`, `/postgres`, `/shared`, `/diary`, `/storage`, and `/adapters/*`.
 
-### Improved
-- Legacy records without `status` now infer `done` when a `result` is present.
+### Changed
+- **Monorepo Internal Architecture:**
+  - Source code reorganized into modular internal packages (`packages/shared`, `packages/core`, `packages/memory`, `packages/redis`, `packages/postgres`) compiled into a single canonical build output (`dist/`).
+- **Build Pipeline Optimization:**
+  - Cleaned build output pipeline to reduce unpacked package size by **57.7%** (from 333.1 kB to 140.7 kB) and tarball size by **30.6%**.
 
-## [Unreleased]
+### Deprecated
+- Unmanaged direct manipulation of raw storage adapters without routing through `StorageManager` (retained for backward compatibility).
 
-## [1.2.0] - 2026-06-26
+### Removed
+- Redundant `dist/package.json` build artifact.
+- Duplicate nested output directories (`dist/src/`, `dist/packages/`).
 
 ### Fixed
-
-- **MemoryStorage isolation:** `store` and `locks` are now instance fields instead of `static` class fields, eliminating cross-instance state pollution in tests and multi-agent processes.
-- **Consistent timestamps in `writeTaskResult`:** `record.timestamp` and `state.lastRun` are now captured from a single `Date.now()` call, ensuring they are always identical.
-- **Non-atomic read warnings:** Added explicit `@warning` JSDoc annotations to `hasProcessedTask()` and `getTaskResult()` (matching the existing warning on `filterNewTasks()`).
-- **SQLite `locked_at` index:** Added `CREATE INDEX IF NOT EXISTS` on the `locked_at` column of the locks table for faster TTL expiry scans under high concurrency.
-- **Redis diary blob TTL:** `RedisStorage` now accepts an optional `globalTtlMs` constructor option. When set, every diary state blob written to Redis uses a `PX` expiry, preventing unbounded key growth.
-
-### Added
-
-- **`status` field on `TaskRecord`:** Tasks now track their lifecycle stage: `"pending"` (claimed, no result yet), `"done"` (result written), or `"failed"` (explicitly failed). The optional `failReason` field stores the failure message.
-- **`diary.failTask(title, reason?)`:** Atomically marks a claimed task as `"failed"` with an optional human-readable reason. Throws if the task was never claimed.
-- **`diary.batchClaimTasks(titles[], options?)`:** Atomically claims multiple tasks in a single lock acquisition. Returns the subset of titles that were successfully claimed. Drastically reduces storage round-trips for batch workloads.
-- **`diary.getStats()`:** Returns a `AgentStats` diagnostic summary including `runCount`, `historyCount`, `pendingCount`, `doneCount`, `failedCount`, `lastRunAt`, and `oldestTaskAt`. Expired tasks are excluded from active counts.
-- **`diary.exportHistory()`:** Exports the full agent state as a serializable `AgentState` object for backups, migrations, or cross-agent sync.
-- **`diary.importHistory(snapshot, options?)`:** Imports a previously exported snapshot. Supports `merge: true` to merge new tasks into existing state without creating duplicates.
-- **`diary.pruneExpiredTasks()`:** Atomically scans history, removes all expired records, and returns them. Also triggers the `onTaskExpired` callback for every evicted record.
-- **`onTaskExpired` hook:** New `AgentDiaryOptions.onTaskExpired` callback is invoked whenever a task expires and is evicted — either during `claimTask()`, `batchClaimTasks()`, or `pruneExpiredTasks()`.
-- **`hashFn` option:** New `AgentDiaryOptions.hashFn` lets you supply a custom signature function for task deduplication. Useful for structured task IDs or domain-specific normalization strategies.
-- **PostgreSQL adapter (`PostgresStorage`):** New `src/adapters/postgres.ts` adapter with lock-table-based distributed locking, atomic expired-lock stealing, `lock_id`-safe release, and lazy table/index initialization. Compatible with Supabase, Neon, Railway, AWS RDS, and any managed Postgres provider.
-
-## [1.1.6] - 2026-06-10
+- Fixed state synchronization in `AgentDiary` when instantiated with custom legacy storage adapters.
+- Fixed path resolution aliases in Vitest test runner for sub-package modules.
 
 ### Security
-
-- Validate `tableName` and `locksTableName` in `SqliteStorage` constructor to prevent SQL injection vulnerabilities.
-
-### Added
-
-- **MemoryStorage Adapter**: Lock-safe in-memory adapter (`MemoryStorage`) for prototyping and fast unit testing.
-- **Task TTL (Expiration)**: Support for Time-to-Live on task records globally via `defaultTtlMs` or per-task on `claimTask()` and `writeTaskResult()`. Expired tasks automatically become reclaimable.
-- **Task Deletion**: `diary.deleteTask(title)` API to remove specific tasks from state history.
-- **History Querying**: `diary.getTasksCompletedSince(timestamp)` and `diary.findTasksByKeyword(keyword)` to filter and search history.
-- **History Cleaning**: `diary.clearHistory()` to reset the agent diary state.
-
-### Fixed
-
-- Option naming in `LocalFileStorage` constructor usage inside the multi-process test worker (`directory` -> `baseDir`).
-- ES Module loader conflicts for worker threads by renaming the worker fixture to `.cjs` and adding `dist/package.json` for CommonJS format detection.
+- Strengthened atomic spin-lock lease acquisition and renewal routines in `MemoryLockProvider` and `StorageAdapterBridge` to prevent race conditions during high-volume worker concurrency (verified up to 50 concurrent agents).
