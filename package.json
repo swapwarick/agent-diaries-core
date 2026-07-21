@@ -49,6 +49,21 @@
       "types": "./dist/adapters/*.d.ts",
       "import": "./dist/adapters/*.js",
       "require": "./dist/adapters/*.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js",
+      "require": "./dist/tools/index.js"
+    },
+    "./agents": {
+      "types": "./dist/agents/index.d.ts",
+      "import": "./dist/agents/index.js",
+      "require": "./dist/agents/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js",
+      "require": "./dist/runtime/index.js"
     }
   },
   "files": [

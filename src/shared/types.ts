@@ -137,6 +137,7 @@ export interface WorkerMetadata {
 }
 
 export interface DomainEvents {
+  // ── Existing workflow events (unchanged) ─────────────────────────────────
   WorkflowCreated: { workflow: WorkflowRecord };
   WorkflowClaimed: { workflowId: string; workerId: string };
   WorkflowStarted: { workflowId: string };
@@ -151,4 +152,61 @@ export interface DomainEvents {
   CacheMiss: { key: string };
   LockAcquired: { key: string; lockToken: string };
   LockReleased: { key: string; lockToken: string };
+
+  // ── Phase 5: Agent lifecycle events ──────────────────────────────────────
+  /** Fired when an agent execution starts. */
+  AgentStarted: { agentId: string; traceId: string; workflowId?: string };
+  /** Fired when an agent execution completes successfully. */
+  AgentCompleted: {
+    agentId: string;
+    traceId: string;
+    workflowId?: string;
+    durationMs: number;
+    toolsUsed: string[];
+  };
+  /** Fired when an agent execution fails or is cancelled. */
+  AgentFailed: {
+    agentId: string;
+    traceId: string;
+    workflowId?: string;
+    error: string;
+    durationMs: number;
+  };
+
+  // ── Phase 5: Tool execution events ────────────────────────────────────────
+  /** Fired each time a tool is invoked by the ToolExecutor. */
+  ToolExecuted: {
+    toolName: string;
+    agentId?: string;
+    traceId?: string;
+    success: boolean;
+    durationMs: number;
+    cached?: boolean;
+  };
+
+  // ── Phase 5: Template events ──────────────────────────────────────────────
+  /** Fired when a workflow template begins executing. */
+  TemplateStarted: { templateId: string; workflowId: string };
+  /** Fired when a workflow template completes all steps. */
+  TemplateCompleted: {
+    templateId: string;
+    workflowId: string;
+    durationMs: number;
+  };
+  /** Fired when a workflow template step fails. */
+  TemplateFailed: {
+    templateId: string;
+    workflowId: string;
+    stepId: string;
+    error: string;
+  };
+
+  // ── Phase 5: Scheduler events ─────────────────────────────────────────────
+  /** Fired when the adaptive scheduler records an execution outcome. */
+  SchedulerOutcomeRecorded: {
+    workerId: string;
+    agentId: string;
+    success: boolean;
+    durationMs: number;
+  };
 }
