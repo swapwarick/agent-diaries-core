@@ -7,3 +7,4 @@ test-report.junit.xml
 coverage/
 .env.local
 *.tgz
+docs/Agent_Diaries_Lab_Phase_4_Prompt.txt

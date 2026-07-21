@@ -6,7 +6,14 @@ import prettierPlugin from "eslint-plugin-prettier";
 export default [
   // Ignore generated files
   {
-    ignores: ["dist/**", "examples/**", "node_modules/**", ".prettierrc.cjs"],
+    ignores: [
+      "dist/**",
+      "docs/api/**",
+      "packages/**",
+      "examples/**",
+      "node_modules/**",
+      ".prettierrc.cjs",
+    ],
   },
 
   // Base configs
@@ -46,7 +53,7 @@ export default [
 
   // Test files – no project, allow Node globals, disable require and no-undef
   {
-    files: ["tests/**/*.ts", "tests/**/*.js"],
+    files: ["tests/**/*.ts", "tests/**/*.js", "tests/**/*.cjs"],
     languageOptions: {
       parserOptions: { ecmaVersion: 2020 },
     },
