@@ -18,6 +18,54 @@
  */
 
 // ---------------------------------------------------------------------------
+// Category
+// ---------------------------------------------------------------------------
+
+/**
+ * Broad functional category that a tool belongs to.
+ * Used by {@link ToolRegistry.findByCategory} and the dashboard.
+ *
+ * Every tool belongs to exactly one category.
+ */
+export type ToolCategory =
+  | "filesystem"    // local and remote file system operations
+  | "search"        // web, semantic, or structured search
+  | "database"      // SQL, NoSQL, vector databases
+  | "cloud"         // cloud provider APIs (AWS, Azure, GCP)
+  | "ai"            // LLM calls, embeddings, inference
+  | "communication" // email, Slack, SMS, webhooks
+  | "development"   // git, GitHub, CI/CD, Docker, package managers
+  | "monitoring"    // metrics, logs, alerts, health checks
+  | "utility"       // general purpose (hashing, parsing, compression)
+  | "security"      // auth, secrets, encryption, scanning
+  | "networking"    // HTTP, TCP, DNS, proxies
+  | "analytics";    // data pipelines, BI, reporting
+
+// ---------------------------------------------------------------------------
+// Health state
+// ---------------------------------------------------------------------------
+
+/**
+ * Six-state health model for tool instances.
+ *
+ * | State | Meaning |
+ * |-------|---------|
+ * | `healthy` | All checks pass; full capacity |
+ * | `degraded` | Partially functional; retry may help |
+ * | `unavailable` | External dependency is down |
+ * | `maintenance` | Deliberately offline for maintenance |
+ * | `disabled` | Administratively disabled |
+ * | `unknown` | Health has not been checked yet |
+ */
+export type ToolHealthState =
+  | "healthy"
+  | "degraded"
+  | "unavailable"
+  | "maintenance"
+  | "disabled"
+  | "unknown";
+
+// ---------------------------------------------------------------------------
 // Permissions
 // ---------------------------------------------------------------------------
 
@@ -52,9 +100,12 @@ export type ToolPermission =
 
 /**
  * Descriptive metadata attached to every registered tool.
- * Used for discovery, documentation, and permission enforcement.
+ * Used for discovery, documentation, permission enforcement, and the dashboard.
+ *
+ * All fields added in Phase 5 are optional — existing tools work unchanged.
  */
 export interface ToolMetadata {
+  // ── Core identity (Sprint 1) ──────────────────────────────────────────────
   /** Unique tool name. Used as the registry key. */
   name: string;
   /** Semantic version string (e.g. "1.0.0"). */
@@ -63,7 +114,7 @@ export interface ToolMetadata {
   description: string;
   /**
    * Fine-grained capability labels this tool exposes.
-   * Used by {@link ToolRegistry.find} for capability-based lookup.
+   * Used by {@link ToolRegistry.find} and {@link ToolRegistry.findCompatible}.
    * @example ["http:get", "http:post"]
    */
   capabilities: string[];
@@ -76,6 +127,36 @@ export interface ToolMetadata {
   author?: string;
   /** Free-form tags for filtering and discovery. */
   tags?: string[];
+
+  // ── Phase 5 extended metadata (all optional) ──────────────────────────────
+  /**
+   * Unique tool identifier.
+   * Defaults to `name` when absent. May differ from `name` when the same
+   * tool class is instantiated multiple times with different configurations.
+   */
+  id?: string;
+  /** Functional category this tool belongs to. Used for registry filtering. */
+  category?: ToolCategory;
+  /**
+   * Expected p50 execution latency in milliseconds.
+   * Used by {@link ToolRegistry.recommend} to rank candidate tools.
+   */
+  estimatedLatencyMs?: number;
+  /**
+   * Expected cost per tool call in USD.
+   * Used by {@link RuntimeMetricsCollector} for cost tracking.
+   */
+  estimatedCostUSD?: number;
+  /**
+   * Last known health state of this tool.
+   * Updated by {@link ToolRegistry.healthCheck}.
+   */
+  healthState?: ToolHealthState;
+  /**
+   * Platforms on which this tool is supported.
+   * @example ["linux", "macos"]
+   */
+  supportedPlatforms?: ("linux" | "windows" | "macos" | "any")[];
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +208,80 @@ export interface ToolResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Health check results
+// ---------------------------------------------------------------------------
+
+/**
+ * Rich health check result returned by Phase 5 tools.
+ *
+ * Replaces the legacy `{ healthy: boolean; message? }` shape with a
+ * 6-state model that includes latency measurement and diagnostic data.
+ *
+ * @see {@link ToolHealthState} for the state enum.
+ */
+export interface ToolHealthCheckResult {
+  /** Current health state. */
+  state: ToolHealthState;
+  /** Optional human-readable diagnostic message. */
+  message?: string;
+  /** Wall-clock time taken by the health check itself, in milliseconds. */
+  latencyMs?: number;
+  /** Arbitrary diagnostic key-value pairs (connection pool stats, etc.). */
+  diagnostics?: Record<string, unknown>;
+  /** Unix timestamp (ms) when the check was performed. */
+  checkedAt: number;
+}
+
+/**
+ * Legacy health check shape — accepted by {@link ToolRegistry.healthCheck}.
+ * @deprecated Use {@link ToolHealthCheckResult} for new tools.
+ */
+export interface LegacyHealthCheckResult {
+  healthy: boolean;
+  message?: string;
+}
+
+/**
+ * Union of both legacy and rich health check shapes.
+ * {@link ToolRegistry} normalizes this into {@link ToolHealthStatus}.
+ */
+export type AnyHealthCheckResult = ToolHealthCheckResult | LegacyHealthCheckResult;
+
+/**
+ * Normalizes either the old or new `healthCheck()` return value into a
+ * canonical {@link ToolHealthCheckResult}.
+ *
+ * @param raw - Output from `tool.healthCheck()`.
+ * @returns Normalized result with `state` and `checkedAt` always populated.
+ */
+export function normalizeHealthCheckResult(
+  raw: AnyHealthCheckResult,
+): ToolHealthCheckResult {
+  if ("state" in raw) return raw as ToolHealthCheckResult;
+  const legacy = raw as LegacyHealthCheckResult;
+  return {
+    state: legacy.healthy ? "healthy" : "unavailable",
+    message: legacy.message,
+    checkedAt: Date.now(),
+  };
+}
+
+/**
+ * Result stored in {@link ToolRegistry} after a health check sweep.
+ * Extends {@link ToolHealthCheckResult} with the tool name and
+ * a convenience `healthy` boolean for backward compatibility.
+ */
+export interface ToolHealthStatus extends ToolHealthCheckResult {
+  /** Tool name. */
+  name: string;
+  /**
+   * Convenience alias: `state === "healthy"`.
+   * @deprecated Prefer checking `state` directly.
+   */
+  healthy: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Tool interface
 // ---------------------------------------------------------------------------
 
@@ -148,6 +303,8 @@ export interface ToolResult<T = unknown> {
  *     description: "Makes HTTP requests",
  *     capabilities: ["http:get", "http:post"],
  *     permissions: ["network:http", "network:https"],
+ *     category: "networking",
+ *     estimatedLatencyMs: 500,
  *   };
  *
  *   async execute(input, ctx) {
@@ -161,6 +318,31 @@ export interface ToolResult<T = unknown> {
 export interface Tool<TInput = unknown, TOutput = unknown> {
   /** Immutable metadata describing this tool. */
   readonly metadata: ToolMetadata;
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  /**
+   * Optional initialization hook. Called once before the first `execute()`.
+   *
+   * Use to establish connections, load configuration, or warm up caches.
+   * Called by {@link ToolRegistry} when `autoInit: true`, or by
+   * {@link ExecutionEnvironment.warmup}.
+   *
+   * Default: no-op.
+   */
+  initialize?(): Promise<void>;
+
+  /**
+   * Optional cleanup hook. Called when the tool is unregistered or the
+   * runtime shuts down via {@link ExecutionEnvironment.shutdown}.
+   *
+   * Use to close connections, flush buffers, or release resources.
+   *
+   * Default: no-op.
+   */
+  cleanup?(): Promise<void>;
+
+  // ── Core execution ────────────────────────────────────────────────────────
 
   /**
    * Execute the tool with the given input and context.
@@ -184,21 +366,10 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
    * Optional health check. Called by {@link ToolRegistry.healthCheck}.
    * Should verify connectivity to external dependencies.
    *
-   * @returns Health status and optional diagnostic message.
+   * Accepts both the legacy `{ healthy: boolean }` shape and the new
+   * {@link ToolHealthCheckResult} shape. Both are normalized by the registry.
+   *
+   * @returns Health result (legacy or rich shape).
    */
-  healthCheck?(): Promise<{ healthy: boolean; message?: string }>;
-}
-
-// ---------------------------------------------------------------------------
-// Tool health check result
-// ---------------------------------------------------------------------------
-
-/** Result of a {@link ToolRegistry} health check sweep. */
-export interface ToolHealthStatus {
-  /** Tool name. */
-  name: string;
-  /** Whether the tool is healthy. */
-  healthy: boolean;
-  /** Optional message from the tool's `healthCheck()`. */
-  message?: string;
+  healthCheck?(): Promise<AnyHealthCheckResult>;
 }

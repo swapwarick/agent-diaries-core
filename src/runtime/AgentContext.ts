@@ -1,15 +1,8 @@
 import { ToolRegistry } from "../tools/ToolRegistry";
-
-/**
- * Runtime logger interface — thin, structured logging surface.
- * Implementations can bridge to pino, winston, console, or OpenTelemetry.
- */
-export interface RuntimeLogger {
-  debug(message: string, meta?: Record<string, unknown>): void;
-  info(message: string, meta?: Record<string, unknown>): void;
-  warn(message: string, meta?: Record<string, unknown>): void;
-  error(message: string, meta?: Record<string, unknown>): void;
-}
+// RuntimeLogger is defined in its own module to avoid circular dependency chains.
+// Re-exported here so callers that import from AgentContext still work.
+export { RuntimeLogger, ConsoleRuntimeLogger, SilentRuntimeLogger } from "./RuntimeLogger";
+import type { RuntimeLogger } from "./RuntimeLogger";
 
 /**
  * Immutable per-execution context injected into every {@link Agent.execute} call.
@@ -88,30 +81,3 @@ export interface AgentContext {
   cancel(): void;
 }
 
-/**
- * Default console-based logger — used when no custom logger is provided.
- * @internal
- */
-export class ConsoleRuntimeLogger implements RuntimeLogger {
-  constructor(private readonly prefix: string = "[Runtime]") {}
-
-  debug(message: string, meta?: Record<string, unknown>): void {
-    if (meta) console.debug(`${this.prefix} ${message}`, meta);
-    else console.debug(`${this.prefix} ${message}`);
-  }
-
-  info(message: string, meta?: Record<string, unknown>): void {
-    if (meta) console.info(`${this.prefix} ${message}`, meta);
-    else console.info(`${this.prefix} ${message}`);
-  }
-
-  warn(message: string, meta?: Record<string, unknown>): void {
-    if (meta) console.warn(`${this.prefix} ${message}`, meta);
-    else console.warn(`${this.prefix} ${message}`);
-  }
-
-  error(message: string, meta?: Record<string, unknown>): void {
-    if (meta) console.error(`${this.prefix} ${message}`, meta);
-    else console.error(`${this.prefix} ${message}`);
-  }
-}

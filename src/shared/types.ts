@@ -182,6 +182,12 @@ export interface DomainEvents {
     success: boolean;
     durationMs: number;
     cached?: boolean;
+    /** Number of retry attempts before this outcome (0 = first attempt succeeded/failed). */
+    retryCount?: number;
+    /** Whether the execution was cancelled via AbortSignal. */
+    cancelled?: boolean;
+    /** Whether the execution was aborted by timeout. */
+    timedOut?: boolean;
   };
 
   // ── Phase 5: Template events ──────────────────────────────────────────────

@@ -1,6 +1,6 @@
 {
   "name": "@agent-diaries/core",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "The lightweight, framework-agnostic memory layer and workflow orchestration platform for edge AI agents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -64,6 +64,11 @@
       "types": "./dist/runtime/index.d.ts",
       "import": "./dist/runtime/index.js",
       "require": "./dist/runtime/index.js"
+    },
+    "./runtime/distributed": {
+      "types": "./dist/runtime/distributed/contracts.d.ts",
+      "import": "./dist/runtime/distributed/contracts.js",
+      "require": "./dist/runtime/distributed/contracts.js"
     }
   },
   "files": [

@@ -1,4 +1,5 @@
 import { Tool, ToolContext, ToolResult, ToolPermission } from "./contracts";
+import { EventBus } from "../core/events/EventBus";
 
 /**
  * Options controlling a single {@link ToolExecutor.run} call.
@@ -21,6 +22,12 @@ export interface ToolExecutorOptions {
    * against this list before execution.
    */
   grantedPermissions?: ToolPermission[];
+  /**
+   * Optional event bus. When provided, the executor emits a `ToolExecuted`
+   * domain event after each tool invocation, enabling zero-instrumentation
+   * metrics collection via {@link RuntimeMetricsCollector}.
+   */
+  eventBus?: EventBus;
 }
 
 /**
@@ -58,7 +65,7 @@ export class ToolExecutor {
     context: ToolContext,
     options: ToolExecutorOptions = {},
   ): Promise<ToolResult<TOut>> {
-    const { maxRetries = 0, retryDelayMs = 500, grantedPermissions } = options;
+    const { maxRetries = 0, retryDelayMs = 500, grantedPermissions, eventBus } = options;
 
     // -----------------------------------------------------------------------
     // 1. Permission check
@@ -68,11 +75,13 @@ export class ToolExecutor {
         (p) => !grantedPermissions.includes(p),
       );
       if (denied.length > 0) {
-        return {
+        const result: ToolResult<TOut> = {
           success: false,
           error: `[ToolExecutor] Permission denied for "${tool.metadata.name}". Missing: ${denied.join(", ")}`,
           durationMs: 0,
         };
+        await this.emitEvent(eventBus, tool.metadata.name, context, result, 0, false, false);
+        return result;
       }
     }
 
@@ -82,11 +91,13 @@ export class ToolExecutor {
     if (tool.validate) {
       const validation = tool.validate(input);
       if (!validation.valid) {
-        return {
+        const result: ToolResult<TOut> = {
           success: false,
           error: `[ToolExecutor] Input validation failed for "${tool.metadata.name}": ${(validation.errors || []).join("; ")}`,
           durationMs: 0,
         };
+        await this.emitEvent(eventBus, tool.metadata.name, context, result, 0, false, false);
+        return result;
       }
     }
 
@@ -105,30 +116,37 @@ export class ToolExecutor {
       try {
         const result = await tool.execute(input, { ...context, signal: merged.signal });
         merged.cleanup();
-        return {
+        const finalResult: ToolResult<TOut> = {
           ...result,
           durationMs: Date.now() - startTime,
         };
+        await this.emitEvent(eventBus, tool.metadata.name, context, finalResult, attempt, false, false);
+        return finalResult;
       } catch (err: any) {
         merged.cleanup();
         const durationMs = Date.now() - startTime;
+        const timedOut = merged.signal.aborted && err?.name !== "AbortError" === false;
 
         // Never retry on cancellation
         if (err?.name === "AbortError" || merged.signal.aborted) {
-          return {
+          const result: ToolResult<TOut> = {
             success: false,
             error: `[ToolExecutor] Execution cancelled for "${tool.metadata.name}"`,
             durationMs,
           };
+          await this.emitEvent(eventBus, tool.metadata.name, context, result, attempt, true, timedOut);
+          return result;
         }
 
         attempt++;
         if (attempt > maxRetries) {
-          return {
+          const result: ToolResult<TOut> = {
             success: false,
             error: `[ToolExecutor] "${tool.metadata.name}" failed after ${attempt} attempt(s): ${err?.message || String(err)}`,
             durationMs,
           };
+          await this.emitEvent(eventBus, tool.metadata.name, context, result, attempt, false, false);
+          return result;
         }
 
         // Exponential-ish backoff
@@ -143,6 +161,37 @@ export class ToolExecutor {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Emits a `ToolExecuted` domain event if an EventBus is provided.
+   * Silently swallows errors to never disrupt the execution path.
+   */
+  private async emitEvent<T>(
+    eventBus: EventBus | undefined,
+    toolName: string,
+    context: ToolContext,
+    result: ToolResult<T>,
+    retryCount: number,
+    cancelled: boolean,
+    timedOut: boolean,
+  ): Promise<void> {
+    if (!eventBus) return;
+    try {
+      await eventBus.emit("ToolExecuted", {
+        toolName,
+        agentId: context.agentId,
+        traceId: context.traceId,
+        success: result.success,
+        durationMs: result.durationMs,
+        cached: result.cached,
+        retryCount,
+        cancelled,
+        timedOut,
+      });
+    } catch {
+      // never fail execution due to metrics emission
+    }
+  }
 
   /**
    * Builds a combined AbortSignal from an optional caller signal and a timeout.
