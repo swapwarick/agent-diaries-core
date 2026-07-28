@@ -12,3 +12,4 @@ export * from "./timeline/TimelineService";
 export * from "./providers/SearchOrchestrator";
 export * from "./dashboard/Dashboard";
 export * from "./benchmark/BenchmarkEngine";
+export * from "./logging";

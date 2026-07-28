@@ -55,8 +55,28 @@ export class MemoryCacheProvider implements CacheProvider {
   }
 }
 
+/**
+ * In-memory lock provider.
+ *
+ * `acquireLock` / `releaseLock` / `renewLease` retain TTL semantics because
+ * they model the interface for distributed backends (Redis, Postgres) where
+ * TTL-based leases are the correct primitive.
+ *
+ * `withLock` — the method used by all internal coordination paths including
+ * `WorkflowRepository.claimWorkflow()` — uses a chained-Promise FIFO mutex
+ * with **no TTL**. This is safe for single-process use and eliminates the
+ * lock-theft race condition observed during chaos testing (where injected
+ * delays exceeding the TTL allowed a second waiter to steal the lock while
+ * the original holder was still executing).
+ */
 export class MemoryLockProvider implements LockProvider {
   private locks = new Map<string, { token: string; expiresAt: number }>();
+
+  /**
+   * Per-key FIFO mutex queues backing `withLock()`. Separate from the TTL
+   * `locks` map used by `acquireLock`/`releaseLock`.
+   */
+  private mutexQueues = new Map<string, Promise<void>>();
 
   async acquireLock(key: string, ttlMs: number = 10000): Promise<string | null> {
     const now = Date.now();
@@ -91,26 +111,38 @@ export class MemoryLockProvider implements LockProvider {
     return false;
   }
 
+  /**
+   * Acquires a per-key FIFO mutex and executes `fn` inside the critical section.
+   *
+   * Guarantees:
+   * - Exactly one caller executes `fn` at a time per key.
+   * - The mutex is always released in `finally` — exceptions cannot deadlock.
+   * - No TTL: the mutex cannot be stolen while `fn` is executing, regardless
+   *   of how long execution takes. This is the core fix for the chaos race.
+   */
   async withLock<R>(key: string, fn: () => Promise<R>): Promise<R> {
-    let token: string | null = null;
-    let attempt = 0;
+    const mutexKey = `${key}:mutex`;
 
-    while (!(token = await this.acquireLock(key, 10000))) {
-      const backoff = Math.min(10 * Math.pow(2, attempt), 500);
-      const jitter = Math.random() * 50;
-      await new Promise((res) => setTimeout(res, backoff + jitter));
-      attempt++;
-      if (attempt > 60) {
-        throw new Error(`[MemoryLockProvider] Lock timeout on key: ${key}`);
-      }
-    }
+    // Grab the tail of the current queue (a resolved Promise when idle).
+    const prev = this.mutexQueues.get(mutexKey) ?? Promise.resolve();
+
+    // Create a release handle for this entry.
+    let releaseMutex!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      releaseMutex = resolve;
+    });
+
+    // Append to the queue: next caller must wait for prev AND our hold.
+    this.mutexQueues.set(mutexKey, prev.then(() => hold));
+
+    // Wait our turn — no polling, no TTL, purely event-loop-driven.
+    await prev;
 
     try {
       return await fn();
     } finally {
-      if (token) {
-        await this.releaseLock(key, token);
-      }
+      // Always release so the next queued waiter can proceed.
+      releaseMutex();
     }
   }
 }

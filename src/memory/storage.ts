@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as lockfile from "proper-lockfile";
-import { randomUUID } from "crypto";
 
 /**
  * Interface contract for legacy storage adapters.
@@ -49,7 +48,7 @@ export class LocalFileStorage<T> implements StorageAdapter<T> {
       const data = await fs.promises.readFile(filePath, "utf-8");
       return JSON.parse(data) as T;
     } catch (e) {
-      console.error(`[LocalFileStorage] Error reading key ${key}:`, e);
+      process.stderr.write(`[LocalFileStorage] Error reading key ${key}: ${e}\n`);
       return null;
     }
   }
@@ -60,7 +59,7 @@ export class LocalFileStorage<T> implements StorageAdapter<T> {
       const data = JSON.stringify(value, null, 2);
       await fs.promises.writeFile(filePath, data, "utf-8");
     } catch (e) {
-      console.error(`[LocalFileStorage] Error writing key ${key}:`, e);
+      process.stderr.write(`[LocalFileStorage] Error writing key ${key}: ${e}\n`);
       throw e;
     }
   }
@@ -87,6 +86,17 @@ export class LocalFileStorage<T> implements StorageAdapter<T> {
 /**
  * In-memory storage adapter for testing and ephemeral process execution.
  *
+ * Uses a chained-Promise mutex for serializing concurrent access. Unlike the
+ * previous TTL-based spin-lock, this mutex cannot expire while the holder is
+ * executing, which eliminates the lock-theft race condition observed under
+ * chaos conditions (injected delays, simulated crashes, slow I/O).
+ *
+ * **Why no TTL?** In a single-process in-memory context, if the lock holder
+ * crashes the entire process crashes — there is no surviving process to steal
+ * the lock from. A TTL only introduces risk: any delay exceeding the TTL
+ * allowed a second caller to enter the critical section while the first was
+ * still running, causing duplicate task execution.
+ *
  * @example
  * ```typescript
  * const storage = new MemoryStorage();
@@ -94,7 +104,13 @@ export class LocalFileStorage<T> implements StorageAdapter<T> {
  */
 export class MemoryStorage<T> implements StorageAdapter<T> {
   private store = new Map<string, string>();
-  private locks = new Map<string, { value: string; expiresAt: number }>();
+
+  /**
+   * Per-key FIFO mutex queues. Each key maps to a Promise that resolves only
+   * after all previously-enqueued holders have finished. New callers chain off
+   * the tail of this queue so execution is always serialized.
+   */
+  private mutexQueues = new Map<string, Promise<void>>();
 
   async get(key: string): Promise<T | null> {
     const data = this.store.get(key);
@@ -102,7 +118,7 @@ export class MemoryStorage<T> implements StorageAdapter<T> {
     try {
       return JSON.parse(data) as T;
     } catch (e) {
-      console.error(`[MemoryStorage] Failed to parse JSON for key ${key}:`, e);
+      process.stderr.write(`[MemoryStorage] Failed to parse JSON for key ${key}: ${e}\n`);
       return null;
     }
   }
@@ -111,42 +127,38 @@ export class MemoryStorage<T> implements StorageAdapter<T> {
     this.store.set(key, JSON.stringify(value));
   }
 
+  /**
+   * Acquires a per-key FIFO mutex and executes `fn` inside the critical section.
+   *
+   * Guarantees:
+   * - Exactly one caller executes `fn` at a time per key.
+   * - The mutex is always released in `finally` — exceptions cannot deadlock.
+   * - No TTL: the mutex cannot expire while `fn` is running, regardless of
+   *   how long execution takes. This is the direct fix for the chaos race.
+   */
   async withLock<R>(key: string, fn: () => Promise<R>): Promise<R> {
-    const lockKey = `${key}:lock`;
-    const lockValue = randomUUID();
-    const lockTtlMs = 10000;
+    const mutexKey = `${key}:mutex`;
 
-    const acquireLock = (): boolean => {
-      const now = Date.now();
-      const existing = this.locks.get(lockKey);
-      if (existing && existing.expiresAt > now) {
-        return false;
-      }
-      this.locks.set(lockKey, {
-        value: lockValue,
-        expiresAt: now + lockTtlMs,
-      });
-      return true;
-    };
+    // Grab the tail of the current queue (a resolved Promise when key is idle).
+    const prev = this.mutexQueues.get(mutexKey) ?? Promise.resolve();
 
-    let attempt = 0;
-    while (!acquireLock()) {
-      const backoff = Math.min(10 * Math.pow(2, attempt), 500);
-      const jitter = Math.random() * 50;
-      await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
-      attempt++;
-      if (attempt > 60) {
-        throw new Error(`[MemoryStorage] Lock timeout on key: ${key}`);
-      }
-    }
+    // Create a release handle for this entry.
+    let releaseMutex!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      releaseMutex = resolve;
+    });
+
+    // Append to the queue: the next caller must wait for prev AND our hold.
+    this.mutexQueues.set(mutexKey, prev.then(() => hold));
+
+    // Wait our turn — no polling, no TTL, purely event-loop-driven.
+    await prev;
 
     try {
       return await fn();
     } finally {
-      const existing = this.locks.get(lockKey);
-      if (existing && existing.value === lockValue) {
-        this.locks.delete(lockKey);
-      }
+      // Always release so the next queued waiter can proceed.
+      releaseMutex();
     }
   }
 }
