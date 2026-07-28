@@ -20,7 +20,7 @@
 
 ### What Problems Does It Solve?
 - **🛑 Infinite Execution Loops:** Prevents agents from repeatedly executing the exact same LLM call or web scraping job when context windows reset or prompts repeat.
-- **⚡ Multi-Agent Swarm Race Conditions:** Uses atomic spin-locks to guarantee that when 50+ serverless agents attempt to claim the exact same task simultaneously, exactly **one** agent succeeds while the others safely back off.
+- **⚡ Multi-Agent Swarm Race Conditions:** Uses provider-appropriate locking to guarantee that when 50+ agents attempt to claim the exact same task simultaneously, exactly **one** agent succeeds while the others safely back off. In-memory deployments use a **process-local FIFO Promise mutex** (no TTL, no polling, no lock theft). Distributed deployments (Redis, PostgreSQL) use **TTL-based distributed locks with exponential backoff + jitter** for cross-process coordination.
 - **💸 Wasted API & Scraping Costs:** Caches and indexes completed task results by signature, allowing agents to instantly reuse previous results instead of re-running expensive LLM pipelines.
 - **🔍 Zero Visibility into Swarm Health:** Provides built-in OpenTelemetry-style distributed tracing, real-time metrics aggregation, and sequenced audit timelines.
 
@@ -292,7 +292,7 @@ try { return await fn(); } finally { releaseMutex(); }
 | FIFO ordering | ❌ Non-deterministic | ✅ Strict FIFO queue |
 | Max execution time | ❌ Bounded by TTL | ✅ Unbounded — no theft |
 
-> **Note:** This change applies **only** to the in-memory providers (`MemoryStorage`, `MemoryLockProvider`). Distributed providers — Redis, PostgreSQL — continue using lease-based locking with renewal semantics, which is the correct primitive for cross-process coordination.
+> **Note:** This change applies **only** to the in-memory providers (`MemoryStorage`, `MemoryLockProvider`). Distributed providers — Redis, PostgreSQL — continue using TTL-based distributed locks with exponential backoff + jitter and lease renewal semantics, which is the correct primitive for cross-process coordination. The two strategies are intentionally different: a Promise queue requires no network round-trips and is optimal for single-process isolation, while a TTL-based lease is required for multi-process correctness across separate runtime environments.
 
 ---
 

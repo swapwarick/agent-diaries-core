@@ -64,4 +64,4 @@ All architectural enhancements have been delivered while preserving **100% backw
 - Fixed path resolution aliases in Vitest test runner for sub-package modules.
 
 ### Security
-- Strengthened atomic spin-lock lease acquisition and renewal routines in `MemoryLockProvider` and `StorageAdapterBridge` to prevent race conditions during high-volume worker concurrency (verified up to 50 concurrent agents).
+- Replaced TTL-based spin-lock in `MemoryLockProvider` and `MemoryStorage` with a **chained-Promise FIFO mutex** (no TTL, no polling, no lock theft) to eliminate duplicate-execution race conditions under chaos delays exceeding the old 10-second lease. Distributed providers (`RedisLockProvider`, `PostgresLockProvider`) retain TTL-based distributed locks with exponential backoff + jitter, which remain correct for cross-process coordination.
