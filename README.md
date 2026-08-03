@@ -59,7 +59,8 @@ import { AgentDiary } from "@agent-diaries/core";
 
 const diary = new AgentDiary({ agentId: "research-agent" });
 
-// 100 agents call this simultaneously. Only 1 executes. The rest return cached results instantly.
+// 100 agents call executeOnce() concurrently.
+// Exactly 1 agent executes the LLM call. The remaining 99 reuse the cached result instantly.
 const summary = await diary.executeOnce("research:openai-q4-2024", async () => {
   const page = await fetchWebPage("https://openai.com/blog/q4-2024");
   return await summarizeWithLLM(page);
