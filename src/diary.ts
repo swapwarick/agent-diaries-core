@@ -151,6 +151,113 @@ export class AgentDiary {
   }
 
   /**
+   * Executes a function exactly once for a given task title, across any number of concurrent agents.
+   *
+   * If the task has already been executed, returns the cached result immediately without calling `fn`.
+   * If the task is new, claims it atomically, calls `fn`, stores the result, and returns it.
+   * If another agent is currently executing the same task, waits for the lock, then returns the cached result.
+   *
+   * This is the primary API for most use cases. Use `claimTask` / `writeTaskResult` directly
+   * only when you need manual control over the claim–execute–record cycle.
+   *
+   * @param title A unique string identifying this task (e.g. `"research:openai-q4-2024"`).
+   * @param fn The async function to execute exactly once. Its return value is stored as the result.
+   * @param options Optional TTL settings.
+   * @returns The result of `fn`, or the previously cached result if the task was already completed.
+   *
+   * @example
+   * ```typescript
+   * const diary = new AgentDiary({ agentId: "researcher" });
+   *
+   * // 100 agents can call this simultaneously.
+   * // Only ONE will call the LLM. The rest return instantly from cache.
+   * const report = await diary.executeOnce("summarize:q4-earnings", async () => {
+   *   return await callLLM("Summarize Q4 earnings...");
+   * });
+   * ```
+   */
+  public async executeOnce<T = string>(
+    title: string,
+    fn: () => Promise<T>,
+    options?: { ttlMs?: number },
+  ): Promise<T | undefined> {
+    const signature = this.computeSignature(title);
+    const ttlMs = options?.ttlMs ?? this.defaultTtlMs;
+
+    return await this.storage.withLock(`diary_${this.agentId}`, async () => {
+      const state = await this.readDiary();
+      const now = Date.now();
+
+      const recordIndex = state.history.findIndex(
+        (r: TaskRecord) => r.signature === signature,
+      );
+
+      if (recordIndex !== -1) {
+        const record = state.history[recordIndex];
+        if (!this.isExpired(record, now)) {
+          // Task already completed — return cached result immediately
+          return record.result as unknown as T | undefined;
+        }
+        if (this.onTaskExpired) {
+          await this.onTaskExpired(record);
+        }
+        state.history.splice(recordIndex, 1);
+      }
+
+      // Claim the task
+      const claimRecord: TaskRecord = {
+        title,
+        signature,
+        status: "pending",
+        timestamp: now,
+      };
+      if (ttlMs !== undefined) {
+        claimRecord.ttlMs = ttlMs;
+      }
+      state.history = [claimRecord, ...state.history].slice(0, this.maxHistory);
+      state.seenSignatures = state.history.map((r: TaskRecord) => r.signature);
+      state.runCount += 1;
+      state.lastRun = now;
+      await this.writeDiary(state);
+
+      // Execute and record result
+      let result: T;
+      try {
+        result = await fn();
+      } catch (err) {
+        // Mark as failed, then rethrow so the caller knows
+        const failState = await this.readDiary();
+        const idx = failState.history.findIndex((r: TaskRecord) => r.signature === signature);
+        if (idx !== -1) {
+          failState.history[idx].status = "failed";
+          failState.history[idx].failReason =
+            err instanceof Error ? err.message : String(err);
+          failState.history[idx].timestamp = Date.now();
+          await this.writeDiary(failState);
+        }
+        throw err;
+      }
+
+      // Persist the result
+      const doneState = await this.readDiary();
+      const idx = doneState.history.findIndex((r: TaskRecord) => r.signature === signature);
+      if (idx !== -1) {
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+        doneState.history[idx].result = resultStr;
+        doneState.history[idx].status = "done";
+        doneState.history[idx].timestamp = Date.now();
+        if (ttlMs !== undefined) {
+          doneState.history[idx].ttlMs = ttlMs;
+        }
+        doneState.lastRun = Date.now();
+        await this.writeDiary(doneState);
+      }
+
+      return result;
+    });
+  }
+
+  /**
    * Atomically claims a task for execution under a distributed lock.
    *
    * @param title The task title to claim.
