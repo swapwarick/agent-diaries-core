@@ -9,7 +9,7 @@
  * Run: npx tsx index.ts
  */
 
-import { AgentDiary } from "@agent-diaries/core";
+import { AgentDiary, MemoryStorage } from "@agent-diaries/core";
 
 // ── Simulated dependencies (replace with real implementations) ──────────────
 
@@ -97,24 +97,37 @@ async function main() {
   const startTime = Date.now();
   let executed = 0;
   let skipped = 0;
+  let printedScans = 0;
+  let printedHits = 0;
+
+  // Shared diary memory layer for the swarm (in-memory for high concurrency)
+  const diary = new AgentDiary({
+    agentId: "security-swarm",
+    storage: new MemoryStorage(),
+  });
 
   // Spawn all agents concurrently — each tries to scan every repo
   await Promise.all(
     Array.from({ length: AGENT_COUNT }, (_, i) => `agent-${i}`).flatMap(agentId =>
       REPOS.map(async repo => {
-        const diary = new AgentDiary({ agentId: "security-swarm" }); // shared agentId = shared coordination
         const taskId = `security-scan:${repo}`;
 
         const previousResult = await diary.getTaskResult(taskId);
         if (previousResult) {
-          process.stdout.write(`  [${agentId.padEnd(9)}]  ↩  Cache hit: ${repo}\n`);
           skipped++;
+          if (printedHits < 3) {
+            printedHits++;
+            console.log(`  [${agentId.padEnd(9)}]  ↩  Cache hit: ${repo}`);
+          }
           return JSON.parse(previousResult);
         }
 
         const result = await diary.executeOnce(taskId, async () => {
-          process.stdout.write(`  [${agentId.padEnd(9)}]  ✓  Scanning ${repo}...\n`);
           executed++;
+          if (printedScans < 5) {
+            printedScans++;
+            console.log(`  [${agentId.padEnd(9)}]  ✓  Scanning ${repo}...`);
+          }
           return await scanRepo(repo);
         });
 
@@ -122,6 +135,9 @@ async function main() {
       })
     )
   );
+  if (skipped > printedHits) {
+    console.log(`  ... and ${skipped - printedHits} more duplicate calls intercepted and served from cache instantly.`);
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const savedCalls = AGENT_COUNT * REPOS.length - executed;
