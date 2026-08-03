@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🧠 Agent Diaries Core</h1>
-  <p><strong>Stop your AI agents from doing the same work twice.</strong></p>
+  <p><strong>Stop AI agents from doing the same work twice.</strong></p>
   <p>One function call. Any agent framework. Exactly-once execution across your entire swarm.</p>
 
 [![NPM Version](https://img.shields.io/npm/v/@agent-diaries/core?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/@agent-diaries/core)
@@ -13,13 +13,54 @@
 
 ---
 
+## 🛑 The Problem
+
+Autonomous agents duplicate work when scaling up.
+
+When 50 agents run concurrently, they repeatedly fetch identical web pages, execute redundant LLM reasoning, and trigger duplicate API calls.
+
+- **Token & API Bloat:** You pay 50× the cost for 1× the result.
+- **Swarm Race Conditions:** Multiple agents attempt to process or mutate the same task at once.
+- **Framework Blindness:** Frameworks like LangChain, AutoGen, CrewAI, or LlamaIndex lack cross-process coordination out of the box.
+
+---
+
+## ⚡ The Solution
+
+**Agent Diaries** is a lightweight, framework-agnostic coordination layer that guarantees **exactly-once execution** for your AI agents.
+
+### Core Benefits
+
+- 🎯 **Exactly-Once Execution:** Guarantee tasks execute only once, no matter how many agents attempt them concurrently.
+- 🌐 **Distributed Coordination:** Safely coordinate agents across processes, worker nodes, or serverless functions.
+- 🚫 **Duplicate Prevention:** Intercept and deduplicate identical LLM calls, web scrapes, and API requests before they happen.
+- 💾 **Persistent History:** Store execution records in-memory, Redis, PostgreSQL, or SQLite so past work survives restarts.
+
+---
+
+## 🚀 30-Second Quick Start
+
+### Installation
+
+```bash
+npm install @agent-diaries/core
+```
+
+Zero required setup or external database drivers. Works in-memory out of the box.
+
+---
+
+## 💡 One Memorable Code Example
+
+Wrap any expensive agent operation in `executeOnce()`.
+
 ```typescript
 import { AgentDiary } from "@agent-diaries/core";
 
 const diary = new AgentDiary({ agentId: "research-agent" });
 
-// 100 agents. 1 LLM call. The rest return from cache instantly.
-const report = await diary.executeOnce("research:openai-q4-2024", async () => {
+// 100 agents call this simultaneously. Only 1 executes. The rest return cached results instantly.
+const summary = await diary.executeOnce("research:openai-q4-2024", async () => {
   const page = await fetchWebPage("https://openai.com/blog/q4-2024");
   return await summarizeWithLLM(page);
 });
@@ -29,179 +70,101 @@ const report = await diary.executeOnce("research:openai-q4-2024", async () => {
 
 ---
 
-## The Problem
+## 🌍 Real-World Use Cases
 
-Your agents are duplicating work.
-
-When 50 agents run in parallel, each one independently fetches the same data, calls the same LLM, and produces the same output. You pay 50×. You get 1× the value.
-
-There's no built-in answer in LangChain, AutoGen, CrewAI, or BullMQ for:
-
-- **Who is running this task right now?**
-- **Has it already been done?**
-- **What was the result?**
-
-Agent Diaries answers all three. In one call.
+| Use Case | How Agent Diaries Solves It |
+|---|---|
+| 🌐 **Browser Agents** | Playwright/Puppeteer swarms deduplicate URL visits so identical web pages are never scraped twice. |
+| 🔬 **Research Agents** | Multi-agent swarms researching 100 topics execute exactly 1 LLM call per topic, preventing redundant synthesis. |
+| 🛡️ **GitHub Security Scanning** | 200 security bots scanning 50 repos execute exactly 50 scans, skipping 9,950 duplicate calls and saving $150+ in LLM tokens. |
+| 🔌 **MCP Server Swarms** | Model Context Protocol tools coordinate execution across agents without repeating expensive tool calls. |
+| 📚 **Multi-Agent RAG** | Vector retrieval and document embedding pipelines prevent duplicate index queries and chunk processing across workers. |
 
 ---
 
-## Quick Start
+## ❓ Why Not Redis?
 
-```bash
-npm install @agent-diaries/core
-```
+> "Can't I just build this with Redis?"
+
+Building coordination yourself requires writing distributed locks, Lua scripts, expiration handling, crash recovery, and result serialization.
+
+| Outcome | DIY with Redis | Agent Diaries |
+|---|---|---|
+| **Atomic Task Ownership** | Complex Lua scripts + `SET NX` | `diary.executeOnce()` |
+| **Crash-Safe Locks** | Manual dead-letter queue + cron cleanup | Built-in |
+| **Execution History** | Custom key schemas & TTL management | Built-in |
+| **Duplicate Interception** | Manual checks before every LLM call | Automatic |
+| **Zero Infrastructure Setup** | ❌ Requires Redis running | ✅ Works in-memory out of the box |
+| **Distributed Scale** | Manual backend wiring | 1 line to enable Redis / Postgres |
+
+---
+
+## 📖 API Reference
+
+### Primary API (Start Here)
+
+`executeOnce()` handles claiming, executing, error handling, result saving, and cache lookup in a single call:
 
 ```typescript
-import { AgentDiary } from "@agent-diaries/core";
-
-const diary = new AgentDiary({ agentId: "my-agent" });
-
-// Run exactly once — even with 100 concurrent agents
-const result = await diary.executeOnce("task-id", async () => {
-  return await yourExpensiveOperation();
+const result = await diary.executeOnce(taskId, async () => {
+  return await expensiveFunction();
 });
 ```
 
-No Redis. No configuration. Works in-memory by default.
+### Advanced Manual Control
 
----
-
-## Killer Demo — 200 Agents, 50 Repos, Zero Duplicate Scans
+When you need granular control over the lifecycle:
 
 ```typescript
-import { AgentDiary } from "@agent-diaries/core";
+// 1. Manually claim task
+const claimed = await diary.claimTask("task-id");
 
-const repos = [
-  "vercel/next.js", "microsoft/vscode", "facebook/react",
-  // ... 47 more
-];
-
-// Spawn 200 agents concurrently
-const agents = Array.from({ length: 200 }, (_, i) => `agent-${i}`);
-
-await Promise.all(
-  agents.flatMap(agentId =>
-    repos.map(async repo => {
-      const diary = new AgentDiary({ agentId });
-
-      return diary.executeOnce(`security-scan:${repo}`, async () => {
-        console.log(`[${agentId}] Scanning ${repo}...`);
-        return await scanRepo(repo); // GitHub API + LLM analysis
-      });
-    })
-  )
-);
+if (claimed) {
+  try {
+    const result = await doWork();
+    // 2. Complete task & store result
+    await diary.writeTaskResult("task-id", result);
+  } catch (err) {
+    await diary.failTask("task-id", err.message);
+  }
+} else {
+  // 3. Retrieve existing result from winning agent
+  const cached = await diary.getTaskResult("task-id");
+}
 ```
 
-**Output:**
-```
-[agent-0]  Scanning vercel/next.js...       ← 1 scan executed
-[agent-1]  Cache hit: vercel/next.js        ← returned instantly
-[agent-2]  Cache hit: vercel/next.js        ← returned instantly
-...
-✔ 50 scans executed (1 per repo)
-✔ 9,950 duplicate calls prevented
-✔ Estimated LLM cost saved: $148
-```
-
-**10,000 total calls. 50 executions. The math is automatic.**
-
----
-
-## Why Not Redis?
-
-> "Can I build this myself with Redis?"
-
-Yes. Here's what you'd build:
-
-| What you need | DIY with Redis | Agent Diaries |
-|---|---|---|
-| Atomic task ownership | Lua script + `SET NX` | `executeOnce()` |
-| Crash-safe locks | Dead-letter queue + cron | Built-in |
-| Execution history | Custom key schema + TTL | Built-in |
-| Duplicate interception | Manual check before every call | Automatic |
-| Works without infrastructure | ❌ Needs Redis running | ✅ In-memory by default |
-| Add Redis when ready | — | One line of config |
-
-Agent Diaries is that week of Redis work. Already built, chaos-tested, and shipped.
-
----
-
-## API
+### Batch Operations
 
 ```typescript
-// ✦ Primary API — start here
-const result = await diary.executeOnce(taskId, fn);
-
-// ✦ Manual control (when you need it)
-const claimed = await diary.claimTask(taskId);
-await diary.writeTaskResult(taskId, result);
-const cached  = await diary.getTaskResult(taskId);
-const done    = await diary.hasProcessedTask(taskId);
-
-// ✦ Batch operations
-const newOnly = await diary.filterNewTasks(tasks);
-const claimed = await diary.batchClaimTasks(titles);
+const newTasks     = await diary.filterNewTasks(taskList);
+const claimedList  = await diary.batchClaimTasks(taskTitles);
 ```
 
-**Switch to Redis or PostgreSQL when you go distributed:**
+### Distributed Backends
+
+Switch from in-memory to Redis or PostgreSQL when scaling to distributed nodes:
 
 ```typescript
+import { StorageManager } from "@agent-diaries/core";
 import { RedisCacheProvider, RedisLockProvider } from "@agent-diaries/core/redis";
 
-const diary = new AgentDiary({
-  agentId: "my-agent",
-  storage: new StorageAdapter({
-    cache: new RedisCacheProvider(redis),
-    lock:  new RedisLockProvider(redis),
-  }),
+const storageManager = new StorageManager({
+  cache: new RedisCacheProvider(redisClient),
+  lock: new RedisLockProvider(redisClient),
 });
+
+const diary = new AgentDiary({ agentId: "distributed-agent", storageManager });
 ```
 
 ---
 
-## Benchmarks
+## 📚 Advanced Documentation
 
-| Metric | Result |
-|---|---|
-| Claim latency (in-memory) | < 1 ms |
-| Dedup throughput | > 50,000 ops/s |
-| Duplicate prevention rate | 99.9% |
-| Overhead per LLM call | < 0.5% |
-
-Full benchmark methodology → [BENCHMARKS.md](./BENCHMARKS.md)
-
----
-
-## More Examples
-
-| Example | What it shows |
-|---|---|
-| [`examples/github-security/`](./examples/github-security/) | 200 agents scanning 50 repos — zero duplicates |
-| [`examples/research-swarm/`](./examples/research-swarm/) | 100 research agents, 1 result per topic |
-| [`examples/customer-support/`](./examples/customer-support/) | Deduplicate support ticket LLM calls |
-| [`examples/langchain-integration/`](./examples/langchain-integration/) | Drop-in with LangChain agents |
-| [`examples/basic/`](./examples/basic/) | 5-minute hello world |
-
----
-
-## Backends
-
-| Backend | Use case |
-|---|---|
-| **In-memory** (default) | Single process, development, testing |
-| **Redis** | Distributed, cross-process coordination |
-| **PostgreSQL** | Durable persistence, audit logs |
-| **SQLite** | Edge deployments, single-machine |
-
----
-
-## Advanced
-
-- [WorkflowCoordinator](./docs/advanced.md) — enterprise multi-step pipeline orchestration
-- [Distributed Tracing](./docs/tracing.md) — OpenTelemetry-style span tracking
-- [Plugin Registry](./docs/plugins.md) — custom backends and middleware
-- [Architecture](./docs/architecture.md) — how it works under the hood
+- [Architecture & Design](./docs/architecture.md) — How in-memory locks, distributed mutexes, and storage facades work
+- [Workflow Coordinator](./docs/advanced.md) — Enterprise multi-step pipeline orchestration
+- [Distributed Tracing](./docs/tracing.md) — OpenTelemetry-style span tracking and metrics
+- [Plugin Framework](./docs/plugins.md) — Custom storage adapters and middleware
+- [Benchmarks & Performance](./BENCHMARKS.md) — Comprehensive latency and throughput methodology
 
 ---
 
