@@ -11,12 +11,13 @@
 
 import { AgentDiary, MemoryStorage } from "@agent-diaries/core";
 
-// ── Live AI Provider Integration (NVIDIA NIM API) ─────────────────────────────
+// ── Optional Live AI Provider (NVIDIA NIM / OpenAI API) ──────────────────────
 
 const GLM_API_URL = process.env.GLM_API_URL || "https://integrate.api.nvidia.com/v1/chat/completions";
-const GLM_API_KEY = process.env.GLM_API_KEY || "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";
+const GLM_API_KEY = process.env.GLM_API_KEY || process.env.OPENAI_API_KEY;
 
 async function scanRepo(repo: string): Promise<string> {
+  // If an API key is provided via environment variables, call the live LLM endpoint
   if (GLM_API_KEY) {
     try {
       const response = await fetch(GLM_API_URL, {
@@ -51,15 +52,15 @@ async function scanRepo(repo: string): Promise<string> {
           model: data.model ?? "meta/llama-3.1-8b-instruct",
           scannedAt: new Date().toISOString(),
           analysis: content,
-          provider: "NVIDIA NIM (Llama 3.1 8B)",
+          provider: "Live LLM API",
         });
       }
     } catch {
-      // Fall back to simulation if network is offline
+      // Fall back to fast simulation if network fails
     }
   }
 
-  // Fallback simulation
+  // Fast simulated execution (zero config required)
   await new Promise(r => setTimeout(r, 20));
   const issues = Math.floor(Math.random() * 5);
   return JSON.stringify({
@@ -84,17 +85,56 @@ const REPOS = [
   "nodejs/node",
   "prisma/prisma",
   "trpc/trpc",
+  "supabase/supabase",
+  "planetscale/database-js",
+  "drizzle-team/drizzle-orm",
+  "colinhacks/zod",
+  "pmndrs/zustand",
+  "tanstack/query",
+  "vitejs/vite",
+  "esbuild/esbuild",
+  "biomejs/biome",
+  "oxc-project/oxc",
+  "pnpm/pnpm",
+  "yarnpkg/yarn",
+  "oven-sh/bun",
+  "nicolo-ribaudo/jest",
+  "vitest-dev/vitest",
+  "microsoft/playwright",
+  "cypress-io/cypress",
+  "puppeteer/puppeteer",
+  "expressjs/express",
+  "fastify/fastify",
+  "nestjs/nest",
+  "honojs/hono",
+  "elysiajs/elysia",
+  "langchain-ai/langchainjs",
+  "vercel/ai",
+  "openai/openai-node",
+  "anthropics/anthropic-sdk-python",
+  "microsoft/autogen",
+  "crewai/crewai",
+  "pydantic/pydantic-ai",
+  "ollama/ollama",
+  "ggml-org/llama.cpp",
+  "huggingface/transformers.js",
+  "tensorflow/tensorflow",
+  "pytorch/pytorch",
+  "scikit-learn/scikit-learn",
+  "apache/arrow",
+  "duckdb/duckdb",
+  "ClickHouse/ClickHouse",
+  "redis/redis",
 ];
 
-const AGENT_COUNT = 50;
+const AGENT_COUNT = 200;
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("━".repeat(60));
-  console.log("  GitHub Security Scanner Swarm — Live NVIDIA AI Demo");
+  console.log("  GitHub Security Scanner Swarm — Agent Diaries Demo");
   console.log("━".repeat(60));
-  console.log(`  AI Provider:  NVIDIA NIM (Meta Llama 3.1 8B Instruct)`);
   console.log(`  Agents:       ${AGENT_COUNT}`);
   console.log(`  Repositories: ${REPOS.length}`);
   console.log(`  Total calls:  ${AGENT_COUNT * REPOS.length}`);
@@ -106,7 +146,6 @@ async function main() {
   let skipped = 0;
   let printedScans = 0;
   let printedHits = 0;
-  let sampleAiResponse: any = null;
 
   // Shared diary memory layer for the swarm (in-memory for high concurrency)
   const diary = new AgentDiary({
@@ -134,13 +173,9 @@ async function main() {
           executed++;
           if (printedScans < 5) {
             printedScans++;
-            console.log(`  [${agentId.padEnd(9)}]  ✓  Scanning ${repo} via NVIDIA AI...`);
+            console.log(`  [${agentId.padEnd(9)}]  ✓  Scanning ${repo}...`);
           }
-          const raw = await scanRepo(repo);
-          if (!sampleAiResponse) {
-            try { sampleAiResponse = JSON.parse(raw); } catch {}
-          }
-          return raw;
+          return await scanRepo(repo);
         });
 
         return result;
@@ -158,17 +193,10 @@ async function main() {
 
   console.log();
   console.log("━".repeat(60));
-  console.log(`  ✔ Repos scanned via NVIDIA LLM: ${executed}`);
-  console.log(`  ✔ Duplicate calls intercepted:  ${savedCalls}`);
-  console.log(`  ✔ Wall-clock time:             ${elapsed}s`);
-  console.log(`  ✔ Simulated LLM cost saved:    $${estimatedSavings}`);
-  if (sampleAiResponse) {
-    console.log("━".repeat(60));
-    console.log("  Sample Live NVIDIA AI Result:");
-    console.log(`  Repo:     ${sampleAiResponse.repo}`);
-    console.log(`  Model:    ${sampleAiResponse.model}`);
-    console.log(`  Analysis: ${sampleAiResponse.analysis}`);
-  }
+  console.log(`  ✔ Repos scanned (unique):   ${executed}`);
+  console.log(`  ✔ Duplicate calls stopped:  ${savedCalls}`);
+  console.log(`  ✔ Wall time:                ${elapsed}s`);
+  console.log(`  ✔ Simulated cost saved:     $${estimatedSavings}`);
   console.log("━".repeat(60));
 }
 
