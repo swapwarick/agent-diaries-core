@@ -88,9 +88,9 @@ function startSwarmSimulation() {
   let executedCount = 0;
   let interceptedCount = 0;
 
-  term.innerHTML += `<div class="log-line text-dim">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>`;
+  term.innerHTML += `<div class="log-divider"></div>`;
   term.innerHTML += `<div class="log-line text-dim">  Agent Swarm Initializing: ${agentCount} agents × ${taskCount} tasks (${totalRequests.toLocaleString()} total requests)</div>`;
-  term.innerHTML += `<div class="log-line text-dim">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>`;
+  term.innerHTML += `<div class="log-divider"></div>`;
 
   let step = 0;
   const interval = setInterval(() => {
@@ -115,11 +115,11 @@ function startSwarmSimulation() {
       document.getElementById('statIntercepted').textContent = interceptedCount.toLocaleString();
       document.getElementById('statSavings').textContent = `$${costSaved}`;
 
-      term.innerHTML += `<div class="log-line text-dim">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>`;
+      term.innerHTML += `<div class="log-divider"></div>`;
       term.innerHTML += `<div class="log-line log-summary">  ✔ ${executedCount} Tasks Executed (1x per unique key)</div>`;
       term.innerHTML += `<div class="log-line log-summary">  ✔ ${interceptedCount.toLocaleString()} Duplicate Calls Intercepted</div>`;
       term.innerHTML += `<div class="log-line log-summary">  ✔ Wall Time: ~1.2s | LLM Cost Saved: $${costSaved}</div>`;
-      term.innerHTML += `<div class="log-line text-dim">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>`;
+      term.innerHTML += `<div class="log-divider"></div>`;
 
       term.scrollTop = term.scrollHeight;
 

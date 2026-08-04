@@ -149,6 +149,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 24px;
@@ -162,6 +163,7 @@ body {
   color: var(--text-main);
   font-weight: 700;
   font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
 .logo-icon {
@@ -176,23 +178,34 @@ body {
   color: var(--accent-violet);
   border-radius: 6px;
   margin-left: 6px;
+  white-space: nowrap;
 }
 
 .nav-links {
   display: flex;
-  gap: 28px;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .nav-links a {
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 500;
   transition: color 0.2s;
+  white-space: nowrap;
 }
 
 .nav-links a:hover {
   color: var(--text-main);
+}
+
+.nav-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .btn {
@@ -531,6 +544,7 @@ body {
   padding: 20px;
   height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   display: flex;
@@ -538,8 +552,29 @@ body {
   gap: 8px;
 }
 
+.terminal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.terminal-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.terminal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+.terminal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .log-line {
   line-height: 1.4;
+  word-break: break-word;
+}
+
+.log-divider {
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  margin: 6px 0;
+  width: 100%;
 }
 
 .log-exec { color: var(--accent-emerald); }
