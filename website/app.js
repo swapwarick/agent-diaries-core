@@ -1,6 +1,14 @@
-/**
- * Agent Diaries Core — Website Interactive Script
- */
+// ── Mobile Menu Toggle ──────────────────────────────────────────────────────
+function toggleMobileMenu() {
+  const navLinks = document.getElementById('navLinks');
+  const menuBtn = document.getElementById('mobileMenuBtn');
+  if (navLinks) {
+    navLinks.classList.toggle('mobile-open');
+    if (menuBtn) {
+      menuBtn.classList.toggle('open');
+    }
+  }
+}
 
 // ── Copy Command ────────────────────────────────────────────────────────────
 function copyInstallCommand() {
@@ -139,7 +147,18 @@ function startSwarmSimulation() {
   }, 120);
 }
 
-// Initial calculation on page load
+// Initial calculation & event listeners on page load
 document.addEventListener('DOMContentLoaded', () => {
   updateCalculator();
+
+  const navLinks = document.getElementById('navLinks');
+  if (navLinks) {
+    navLinks.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navLinks.classList.remove('mobile-open');
+        const menuBtn = document.getElementById('mobileMenuBtn');
+        if (menuBtn) menuBtn.classList.remove('open');
+      });
+    });
+  }
 });
