@@ -17,16 +17,19 @@ function copyInstallCommand() {
 // ── Tab Switching ───────────────────────────────────────────────────────────
 function switchTab(tabId) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.remove('active');
+    content.style.display = 'none';
+  });
 
   const activeContent = document.getElementById(tabId);
   if (activeContent) {
     activeContent.classList.add('active');
+    activeContent.style.display = 'block';
   }
 
-  const eventTarget = event.currentTarget;
-  if (eventTarget) {
-    eventTarget.classList.add('active');
+  if (window.event && window.event.currentTarget) {
+    window.event.currentTarget.classList.add('active');
   }
 }
 
