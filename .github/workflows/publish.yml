@@ -21,42 +21,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Show Environment
+      - name: Display Environment
         run: |
-          echo "GitHub Ref: $GITHUB_REF"
-          echo "GitHub SHA: $GITHUB_SHA"
-          echo "GitHub Actor: $GITHUB_ACTOR"
-          echo "Workspace: $GITHUB_WORKSPACE"
+          echo "Branch: $GITHUB_REF"
+          echo "Commit: $GITHUB_SHA"
+          node -v
+          npm -v
 
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build Package
+      - name: Build
         run: npm run build
-
-      - name: Verify npm Identity
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          echo "========== NPM AUTH =========="
-          echo "Registry: $(npm config get registry)"
-          echo "Whoami:"
-          npm whoami
-          echo ""
 
       - name: Verify Package
         run: |
           echo "========== PACKAGE =========="
-          echo "Package Name:"
           npm pkg get name
-          echo "Package Version:"
           npm pkg get version
-          echo ""
-          echo "package.json"
           cat package.json
-          echo ""
 
       - name: Verify Git
         run: |
@@ -64,28 +49,33 @@ jobs:
           git branch --show-current
           git rev-parse HEAD
           git describe --tags --always || true
-          git status
-          echo ""
 
-      - name: Show npm Configuration
+      - name: Verify npm Authentication
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "========== NPM CONFIG =========="
-          npm config get registry
+          echo "========== NPM =========="
+          echo "Registry: $(npm config get registry)"
+          npm whoami
+          npm ping
+
+      - name: Show npm Config
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
           npm config list
-          echo ""
+
+      - name: Pack Package
+        run: npm pack
 
       - name: Dry Run Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "========== DRY RUN =========="
           npm publish --access public --dry-run
 
       - name: Publish Package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "========== PUBLISH =========="
           npm publish --access public
