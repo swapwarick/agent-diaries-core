@@ -103,7 +103,10 @@
     "format": "prettier --write .",
     "docs:generate": "typedoc",
     "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major"
   },
   "author": "swapwarick_n",
   "bugs": {
