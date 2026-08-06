@@ -1,8 +1,12 @@
 {
   "name": "@agent-diaries/core",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swapwarick/agent-diaries-core.git"
   },
   "description": "Stop your AI agents from doing the same work twice. Exactly-once execution, deduplication, and distributed coordination for multi-agent systems.",
   "keywords": [
@@ -102,10 +106,6 @@
     "prepublishOnly": "npm run build"
   },
   "author": "swapwarick_n",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/swapwarick/agent-diaries-core.git"
-  },
   "bugs": {
     "url": "https://github.com/swapwarick/agent-diaries-core/issues"
   },

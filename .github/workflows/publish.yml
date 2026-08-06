@@ -1,81 +1,43 @@
-name: Publish Package to npm
+name: Publish Package
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: "https://registry.npmjs.org"
+          registry-url: https://registry.npmjs.org
+          cache: npm
 
-      - name: Display Environment
-        run: |
-          echo "Branch: $GITHUB_REF"
-          echo "Commit: $GITHUB_SHA"
-          node -v
-          npm -v
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
         run: npm run build
 
-      - name: Verify Package
+      - name: Verify package
         run: |
-          echo "========== PACKAGE =========="
           npm pkg get name
           npm pkg get version
-          cat package.json
+          npm config get registry
 
-      - name: Verify Git
-        run: |
-          echo "========== GIT =========="
-          git branch --show-current
-          git rev-parse HEAD
-          git describe --tags --always || true
-
-      - name: Verify npm Authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          echo "========== NPM =========="
-          echo "Registry: $(npm config get registry)"
-          npm whoami
-          npm ping
-
-      - name: Show npm Config
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm config list
-
-      - name: Pack Package
-        run: npm pack
-
-      - name: Dry Run Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm publish --access public --dry-run
-
-      - name: Publish Package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          npm publish --access public
+      - name: Publish to npm (Trusted Publishing)
+        run: npm publish --provenance
