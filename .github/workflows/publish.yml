@@ -11,9 +11,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # Required for npm OIDC Trusted Publisher authentication
 
     steps:
       - name: Checkout repository
@@ -22,13 +19,30 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build project
+      - name: Build package
         run: npm run build
 
+      - name: Verify publish configuration
+        run: |
+          echo "Node: $(node -v)"
+          echo "NPM: $(npm -v)"
+          echo "Registry: $(npm config get registry)"
+          echo "User:"
+          npm whoami
+          echo "Package:"
+          npm pkg get name
+          echo "Version:"
+          npm pkg get version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
