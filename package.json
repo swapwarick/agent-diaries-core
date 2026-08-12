@@ -132,6 +132,7 @@
     "pg": "^8.22.0",
     "postcss": "^8.5.25",
     "prettier": "^3.8.3",
+    "tsx": "^4.23.9",
     "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",

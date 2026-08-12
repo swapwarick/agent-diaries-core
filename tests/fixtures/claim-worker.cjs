@@ -1,8 +1,19 @@
+/**
+ * Worker thread that attempts to claim a task using AgentDiary.
+ *
+ * Uses tsx/cjs to register TypeScript support, allowing direct
+ * imports from src/ without needing a prior build step.
+ * Falls back to dist/ imports if tsx is not available.
+ */
+require("tsx/cjs");
+
 const { parentPort } = require("worker_threads");
-const { AgentDiary } = require("../../dist/diary");
-const { LocalFileStorage } = require("../../dist/storage");
 const path = require("path");
 const fs = require("fs");
+
+// Import directly from TypeScript source
+const { AgentDiary } = require("../../src/diary.ts");
+const { LocalFileStorage } = require("../../src/memory/storage.ts");
 
 async function run() {
   const testDir = path.join(__dirname, "..", ".worker-test-data");
