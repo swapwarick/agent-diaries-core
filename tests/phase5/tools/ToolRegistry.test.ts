@@ -11,12 +11,12 @@ function makeTool(
   execResult?: Partial<ToolResult>,
 ): Tool {
   const meta: ToolMetadata = {
+    ...overrides,
     name: overrides.name,
     version: overrides.version ?? "1.0.0",
     description: overrides.description ?? "Test tool",
     capabilities: overrides.capabilities ?? ["test:run"],
     permissions: overrides.permissions ?? ["network:http"],
-    ...overrides,
   };
 
   return {

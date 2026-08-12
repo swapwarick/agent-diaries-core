@@ -75,10 +75,10 @@ describe("ExecutionEnvironment", () => {
     expect(env.agents.size).toBe(0);
   });
 
-  it("accepts injected registries", () => {
+  it("accepts injected registries", async () => {
     const tools = new ToolRegistry();
     const agents = new AgentRegistry();
-    void tools.register(makeTool("MyTool"));
+    await tools.register(makeTool("MyTool"));
     const custom = ExecutionEnvironment.create({ toolRegistry: tools, agentRegistry: agents });
     expect(custom.tools.size).toBe(1);
     expect(custom.agents.size).toBe(0);

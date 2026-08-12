@@ -222,11 +222,13 @@ describe("AgentLifecycle", () => {
     const bus = new EventBus();
     bus.on("AgentFailed", ({ agentId }) => failed.push(agentId));
 
+    const toolReg = new ToolRegistry();
     const agentReg = new AgentRegistry();
     agentReg.register(makeAgent("crasher", {
       executeImpl: async () => { throw new Error("boom"); },
     }));
     const env = ExecutionEnvironment.create({
+      toolRegistry: toolReg,
       agentRegistry: agentReg,
       eventBus: bus,
       logger: new SilentRuntimeLogger(),
