@@ -7,6 +7,7 @@
 ## Key Features
 
 - 🔭 **Span & Trace Recording:** Measure execution durations, start/end timestamps, parent/child relationships, and context metadata.
+- 📦 **Binary Trace Codec:** Compact MessagePack binary serialization (`encode` / `decode`) for streaming high-frequency trace buffers over network & storage.
 - 📡 **Event-Driven Pub-Sub:** Integrates seamlessly with `EventBus` to capture domain events (`WorkflowStarted`, `DiaryUpdated`, `TraceRecorded`).
 - ⏱️ **Sequenced Timeline Audit Trails:** Append-only timeline store (`TimelineRepository`) capturing chronological agent audit events.
 - 📊 **Metrics Aggregation:** Real-time throughput, latency histograms, and pass/fail counts.

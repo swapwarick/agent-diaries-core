@@ -56,6 +56,7 @@ Out-of-the-box storage plugins provided by core packages:
 
 | Storage Plugin | Source Package | Features |
 |---|---|---|
-| `MemoryPlugin` | `@agent-diaries/memory` | In-memory Promise-queue mutex & Local file storage |
+| `MemoryPlugin` | `@agent-diaries/memory` | In-memory Promise-queue FIFO mutex & Local file storage |
+| `LruMemoryProvider` | `@agent-diaries/core/memory` | Bounded in-memory L1 LRU cache decorator (`AG_DIARIES_CACHE_SIZE`) |
 | `RedisPlugin` | `@agent-diaries/redis` | Distributed Redis locks (`SET NX`) & shared caching |
 | `PostgresPlugin` | `@agent-diaries/postgres` | Durable SQL storage, advisory locks, schema migrations |
