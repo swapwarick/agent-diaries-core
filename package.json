@@ -1,6 +1,6 @@
 {
   "name": "@agent-diaries/core",
-  "version": "2.2.5",
+  "version": "2.2.6",
   "publishConfig": {
     "access": "public"
   },
@@ -23,71 +23,72 @@
     "task-queue"
   ],
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     },
     "./diary": {
       "types": "./dist/diary.d.ts",
-      "import": "./dist/diary.js",
+      "import": "./dist/diary.mjs",
       "require": "./dist/diary.js"
     },
     "./storage": {
       "types": "./dist/storage.d.ts",
-      "import": "./dist/storage.js",
+      "import": "./dist/storage.mjs",
       "require": "./dist/storage.js"
     },
     "./core": {
       "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js",
+      "import": "./dist/core/index.mjs",
       "require": "./dist/core/index.js"
     },
     "./memory": {
       "types": "./dist/memory/index.d.ts",
-      "import": "./dist/memory/index.js",
+      "import": "./dist/memory/index.mjs",
       "require": "./dist/memory/index.js"
     },
     "./redis": {
       "types": "./dist/redis/index.d.ts",
-      "import": "./dist/redis/index.js",
+      "import": "./dist/redis/index.mjs",
       "require": "./dist/redis/index.js"
     },
     "./postgres": {
       "types": "./dist/postgres/index.d.ts",
-      "import": "./dist/postgres/index.js",
+      "import": "./dist/postgres/index.mjs",
       "require": "./dist/postgres/index.js"
     },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.js",
+      "import": "./dist/shared/index.mjs",
       "require": "./dist/shared/index.js"
     },
     "./adapters/*": {
       "types": "./dist/adapters/*.d.ts",
-      "import": "./dist/adapters/*.js",
+      "import": "./dist/adapters/*.mjs",
       "require": "./dist/adapters/*.js"
     },
     "./tools": {
       "types": "./dist/tools/index.d.ts",
-      "import": "./dist/tools/index.js",
+      "import": "./dist/tools/index.mjs",
       "require": "./dist/tools/index.js"
     },
     "./agents": {
       "types": "./dist/agents/index.d.ts",
-      "import": "./dist/agents/index.js",
+      "import": "./dist/agents/index.mjs",
       "require": "./dist/agents/index.js"
     },
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",
-      "import": "./dist/runtime/index.js",
+      "import": "./dist/runtime/index.mjs",
       "require": "./dist/runtime/index.js"
     },
     "./runtime/distributed": {
       "types": "./dist/runtime/distributed/contracts.d.ts",
-      "import": "./dist/runtime/distributed/contracts.js",
+      "import": "./dist/runtime/distributed/contracts.mjs",
       "require": "./dist/runtime/distributed/contracts.js"
     }
   },
@@ -102,7 +103,8 @@
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
     "docs:generate": "typedoc",
-    "build": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\" && tsc",
+    "build": "tsup",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
@@ -132,6 +134,7 @@
     "pg": "^8.22.0",
     "postcss": "^8.5.25",
     "prettier": "^3.8.3",
+    "tsup": "^8.5.1",
     "tsx": "^4.23.9",
     "typedoc": "^0.28.20",
     "typescript": "^6.0.3",
@@ -139,7 +142,10 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
-    "proper-lockfile": "^4.1.2"
+    "proper-lockfile": "^4.1.2",
+    "lru-cache": "^10.2.0",
+    "msgpack-lite": "^0.1.26",
+    "prom-client": "^15.1.0"
   },
   "peerDependencies": {
     "better-sqlite3": ">=9 || >=10 || >=11",

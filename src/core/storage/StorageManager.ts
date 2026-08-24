@@ -168,4 +168,8 @@ export class StorageManager {
   }
 }
 
-export const defaultStorageManager = new StorageManager();
+import { LruMemoryProvider } from "../memory/LruMemoryProvider";
+
+export const defaultStorageManager = new StorageManager({
+  cache: new LruMemoryProvider(new MemoryCacheProvider()),
+});
