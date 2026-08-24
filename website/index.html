@@ -36,7 +36,7 @@
     <div class="nav-container">
       <a href="#" class="logo">
         <span class="logo-icon">🧠</span>
-        <span class="logo-text">Agent Diaries <span class="logo-badge">v2.2.2</span></span>
+        <span class="logo-text">Agent Diaries <span class="logo-badge">v2.2.6</span></span>
       </a>
       <nav class="nav-links" id="navLinks">
         <a href="#simulator">Live Simulator</a>
@@ -78,7 +78,7 @@
       </h1>
 
       <p class="hero-subtitle">
-        One function call. Any agent framework. Guaranteed <strong>exactly-once execution</strong>, automatic deduplication, and zero-overhead memory locking across your entire swarm.
+        One function call. Any agent framework. Guaranteed <strong>exactly-once execution</strong>, automatic deduplication, multi-tiered LRU caching, and zero-polling FIFO mutex coordination.
       </p>
 
       <div class="hero-cta-group">
@@ -208,21 +208,33 @@
         </div>
 
         <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Multi-Tiered LRU Caching</h3>
+          <p>Automatic in-memory L1 cache with bounded eviction policy ensures sub-millisecond lookups (< 0.05 ms) with zero-OOM memory leak risk.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>Binary MessagePack Codec</h3>
+          <p>High-throughput binary serialization cuts telemetry & trace payload sizes by 30–60% over standard JSON strings.</p>
+        </div>
+
+        <div class="feature-card">
           <div class="feature-icon">🌐</div>
-          <h3>Distributed Coordination</h3>
-          <p>Safely coordinate agents running on separate processes, worker nodes, Docker containers, or serverless functions.</p>
+          <h3>Distributed FIFO Mutex</h3>
+          <p>Safely coordinate agents running on separate processes, worker nodes, or serverless functions without polling loops.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">🚫</div>
           <h3>Duplicate Interception</h3>
-          <p>Automatically intercept duplicate LLM reasoning requests, web scrapes, and database writes before they hit external APIs.</p>
+          <p>Automatically intercept duplicate LLM reasoning requests, web scrapes, and database writes before hitting external APIs.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">💾</div>
-          <h3>Persistent Memory & History</h3>
-          <p>Keep task execution logs and results stored in-memory, Redis, PostgreSQL, or SQLite so work survives process restarts.</p>
+          <h3>Persistent Storage Backends</h3>
+          <p>Keep task execution logs and results stored in-memory, Redis, PostgreSQL, MongoDB, or SQLite with zero required configuration.</p>
         </div>
       </div>
     </div>
@@ -307,12 +319,22 @@
             <tr>
               <td><strong>Crash-Safe Lock Cleanup</strong></td>
               <td>Manual dead-letter queues & cron jobs</td>
-              <td><span class="badge-green">Built-in Mutex & TTL</span></td>
+              <td><span class="badge-green">Built-in FIFO Mutex & Leases</span></td>
+            </tr>
+            <tr>
+              <td><strong>L1 Memory Caching</strong></td>
+              <td>Manual in-memory LRU eviction layers</td>
+              <td><span class="badge-green"><code>LruMemoryProvider</code> (Auto L1)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Binary Serialization</strong></td>
+              <td>Custom buffer encoders & type guards</td>
+              <td><span class="badge-green">MessagePack <code>encode/decode</code></span></td>
             </tr>
             <tr>
               <td><strong>Execution & Result Caching</strong></td>
               <td>Manual key schemas & custom serialization</td>
-              <td><span class="badge-green">Automatic T Result Cache</span></td>
+              <td><span class="badge-green">Automatic Typed Result Cache</span></td>
             </tr>
             <tr>
               <td><strong>Infrastructure Setup</strong></td>
@@ -341,6 +363,8 @@
       <div class="tab-container">
         <div class="tab-buttons">
           <button class="tab-btn active" onclick="switchTab('tab-ts')">TypeScript / Node.js</button>
+          <button class="tab-btn" onclick="switchTab('tab-lru')">LRU Cache</button>
+          <button class="tab-btn" onclick="switchTab('tab-codec')">Binary Codec</button>
           <button class="tab-btn" onclick="switchTab('tab-langchain')">LangChain</button>
           <button class="tab-btn" onclick="switchTab('tab-autogen')">AutoGen</button>
           <button class="tab-btn" onclick="switchTab('tab-crew')">CrewAI</button>
@@ -355,6 +379,30 @@
 <span class="token-keyword">const</span> data = <span class="token-keyword">await</span> diary.<span class="token-function">executeOnce</span>(<span class="token-string">"scrape:github.com/trending"</span>, <span class="token-keyword">async</span> () => {
   <span class="token-keyword">return</span> <span class="token-keyword">await</span> <span class="token-function">fetchTrendingRepos</span>();
 });</code></pre>
+        </div>
+
+        <div id="tab-lru" class="tab-content">
+          <pre><code><span class="token-keyword">import</span> { StorageManager, MemoryCacheProvider } <span class="token-keyword">from</span> <span class="token-string">"@agent-diaries/core"</span>;
+<span class="token-keyword">import</span> { LruMemoryProvider } <span class="token-keyword">from</span> <span class="token-string">"@agent-diaries/core/memory"</span>;
+
+<span class="token-comment">// Bounded L1 in-memory cache decorator (default 500 items or AG_DIARIES_CACHE_SIZE)</span>
+<span class="token-keyword">const</span> boundedCache = <span class="token-keyword">new</span> <span class="token-title">LruMemoryProvider</span>(<span class="token-keyword">new</span> <span class="token-title">MemoryCacheProvider</span>(), 1000);
+
+<span class="token-keyword">const</span> storage = <span class="token-keyword">new</span> <span class="token-title">StorageManager</span>({ cache: boundedCache });
+<span class="token-keyword">await</span> boundedCache.<span class="token-function">set</span>(<span class="token-string">"agent:context"</span>, { status: <span class="token-string">"ready"</span> }, 60000);</code></pre>
+        </div>
+
+        <div id="tab-codec" class="tab-content">
+          <pre><code><span class="token-keyword">import</span> { encode, decode } <span class="token-keyword">from</span> <span class="token-string">"@agent-diaries/core"</span>;
+
+<span class="token-comment">// Encode structured agent payload to compact Uint8Array binary format</span>
+<span class="token-keyword">const</span> binaryData = <span class="token-function">encode</span>({
+  workflowId: <span class="token-string">"wf-101"</span>,
+  metrics: { latency: 12.4, tokens: 840 }
+});
+
+<span class="token-comment">// Decode binary back to JavaScript object</span>
+<span class="token-keyword">const</span> payload = <span class="token-function">decode</span>(binaryData);</code></pre>
         </div>
 
         <div id="tab-langchain" class="tab-content">
