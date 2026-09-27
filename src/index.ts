@@ -5,3 +5,4 @@ export * from "./redis";
 export * from "./postgres";
 export * from "./storage";
 export * from "./diary";
+export * from "./langchain";

@@ -7,7 +7,7 @@
 [![NPM Downloads](https://img.shields.io/npm/dm/@agent-diaries/core?style=for-the-badge&logo=npm&color=44CC11)](https://www.npmjs.com/package/@agent-diaries/core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-191%2F191%20Passing-brightgreen?style=for-the-badge&logo=vitest&logoColor=white)](https://github.com/swapwarick/agent-diaries-core/actions)
+[![Tests](https://img.shields.io/badge/Tests-224%2F224%20Passing-brightgreen?style=for-the-badge&logo=vitest&logoColor=white)](https://github.com/swapwarick/agent-diaries-core/actions)
 
 </div>
 
@@ -38,6 +38,7 @@ When 50 agents run concurrently, they repeatedly fetch identical web pages, exec
 - 🚀 **Multi-Tiered LRU Caching:** Automatic bounded in-memory L1 cache with configurable eviction prevents memory bloat and delivers sub-millisecond lookups.
 - 📦 **Binary Serialization:** Built-in MessagePack encoding for compact network transmission and fast disk/DB persistence.
 - 💾 **Persistent History:** Store execution records in-memory, Redis, PostgreSQL, MongoDB, or SQLite so past work survives restarts.
+- 🦜 **LangChain Integration:** Drop-in LLM response caching, exactly-once tool execution, and observability for LangChain swarms.
 
 ---
 
@@ -227,6 +228,86 @@ const diary = new AgentDiary({ agentId: "distributed-agent", storageManager });
 
 ---
 
+## 🦜 LangChain Integration (New in v2.3.0)
+
+Import directly from `@agent-diaries/core/langchain` or `@agent-diaries/core`. Agent Diaries provides three seamless integration points for LangChain applications:
+
+### 1. `AgentDiariesCache` — LLM Response Deduplication
+
+Plugs directly into LangChain's `ChatOpenAI`, `ChatAnthropic`, or any `BaseChatModel` via `cache`. Prevents duplicate token spend when multiple agents or prompt templates ask the same question:
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { AgentDiariesCache } from "@agent-diaries/core/langchain";
+
+const cache = new AgentDiariesCache({
+  ttlMs: 3600_000, // 1 hour TTL (default: 24h)
+  keyPrefix: "my-app:llm",
+});
+
+const model = new ChatOpenAI({
+  modelName: "gpt-4o",
+  cache,
+});
+
+// 50 agents call the model with identical prompts simultaneously
+// -> Exactly 1 LLM request is made. The other 49 return instantly from cache.
+const res1 = await model.invoke("Analyze quarterly revenue for Q3 2024");
+const res2 = await model.invoke("Analyze quarterly revenue for Q3 2024");
+```
+
+### 2. `DeduplicatedTool` — Exactly-Once Tool Execution & Mutexes
+
+Wraps any LangChain tool (or custom tool) with Agent Diaries' deduplication engine and concurrency mutex. Crucial for non-idempotent operations like API payments, webhooks, ticket creation, or heavy web scrapes:
+
+```typescript
+import { DeduplicatedTool } from "@agent-diaries/core/langchain";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const chargeCardTool = new DynamicStructuredTool({
+  name: "charge_customer",
+  description: "Charges a customer credit card",
+  schema: z.object({ customerId: z.string(), amountCents: z.number() }),
+  func: async ({ customerId, amountCents }) => stripe.charges.create({ ... }),
+});
+
+// Wrap tool with exactly-once execution guarantee
+const safeTool = new DeduplicatedTool(chargeCardTool, {
+  ttlMs: 300_000,
+  keyResolver: (input) => `charge:${input.customerId}:${input.amountCents}`,
+});
+
+// Even if two agents race to trigger this tool with identical parameters,
+// it executes strictly once.
+const result = await safeTool.invoke({ customerId: "cus_123", amountCents: 5000 });
+```
+
+### 3. `AgentDiariesCallbackHandler` — Observability & Tracing
+
+LangChain `BaseCallbackHandler` that captures LLM calls, tool executions, chain lifecycle, agent actions, and errors directly into an Agent Diary for full auditability and post-hoc debugging:
+
+```typescript
+import { AgentDiariesCallbackHandler } from "@agent-diaries/core/langchain";
+import { AgentDiary } from "@agent-diaries/core";
+
+const diary = new AgentDiary({ agentId: "langchain-supervisor" });
+const handler = new AgentDiariesCallbackHandler({ diary });
+
+// Attach to any chain, agent, or run
+await myAgentExecutor.invoke({ input: "Deploy release v2.3.0" }, {
+  callbacks: [handler],
+});
+
+// Access execution metrics & audit trail
+console.log(handler.getStats());
+// { totalLlmCalls: 4, totalToolCalls: 2, totalErrors: 0, totalTokensUsed: 3120, avgLlmLatencyMs: 412 }
+```
+
+> 📖 **Full LangChain Guide & Architecture:** Check out [`docs/langchain.md`](./docs/langchain.md) and runnable demo in [`examples/langchain-integration/`](./examples/langchain-integration).
+
+---
+
 ## 📊 Performance Metrics & Monitoring
 
 The library ships with a lightweight **MetricsEngine** that records key operational counters (workflow successes/failures, cache hits/misses, etc.). You can plug any metrics exporter (Prometheus, StatsD, OpenTelemetry) by subscribing to the `MetricsEngine` events.
@@ -271,6 +352,7 @@ http.createServer(async (_, res) => {
 - [Workflow Coordinator](./docs/advanced.md) — Enterprise multi-step pipeline orchestration
 - [Distributed Tracing](./docs/tracing.md) — OpenTelemetry-style span tracking and metrics
 - [Plugin Framework](./docs/plugins.md) — Custom storage adapters and middleware
+- [LangChain Integration](./docs/langchain.md) — LLM cache, deduplicated tools, and callback handler for LangChain
 - [Benchmarks & Performance](./BENCHMARKS.md) — Comprehensive latency and throughput methodology
 
 ---
